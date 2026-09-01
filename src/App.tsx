@@ -35,9 +35,19 @@ export const App: React.FC = () => {
   const [activeNaeId, setActiveNaeId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<ViewMode>('LIST');
   
-  const [camiones, setCamiones] = useState<CamionNAE[]>([]);
+  // Estado inicial de camiones recuperado al instante desde caché local
+  const [camiones, setCamiones] = useState<CamionNAE[]>(() => {
+    try {
+      const cached = localStorage.getItem('audimas_camiones_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [lastNotification, setLastNotification] = useState<string | null>(null);
-  const [loadingCamiones, setLoadingCamiones] = useState<boolean>(false);
+  const [loadingCamiones, setLoadingCamiones] = useState<boolean>(() => {
+    return !localStorage.getItem('audimas_camiones_cache');
+  });
 
   // Estado del Colaborador Activo y Avatar (Persistencia localStorage)
   const [collaborator, setCollaborator] = useState<string>(() => {
@@ -68,20 +78,29 @@ export const App: React.FC = () => {
     return `${day}/${month}/${year} ${hours}:${minutes} hs`;
   };
 
-  // Cargar lista de camiones desde Supabase
+  // Cargar lista de camiones desde Supabase (Optimizado con select de columnas livianas y caché local)
   const fetchCamiones = async () => {
-    setLoadingCamiones(true);
+    // Si no hay datos cargados, mostramos spinner
+    if (!localStorage.getItem('audimas_camiones_cache') && camiones.length === 0) {
+      setLoadingCamiones(true);
+    }
+
     try {
       const { data, error } = await supabase
         .from('camiones_nae')
-        .select('*')
+        .select('id, numero_nae, tienda_codigo, tienda_nombre, estado, fecha_inicio_auditoria, created_at')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setCamiones(data);
+        setCamiones(data as CamionNAE[]);
+        try {
+          localStorage.setItem('audimas_camiones_cache', JSON.stringify(data));
+        } catch (e) {
+          console.warn('Error al guardar caché de camiones:', e);
+        }
       }
     } catch (e) {
-      console.warn('Error al consultar camiones:', e);
+      console.warn('Error al consultar camiones desde Supabase:', e);
     } finally {
       setLoadingCamiones(false);
     }

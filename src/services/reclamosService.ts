@@ -41,8 +41,13 @@ const MOTIVO_ORDER: Record<string, number> = {
 
 /**
  * Calcula el resumen de discrepancias reclamables para un camión (Faltantes, Sobrantes, No Facturados, Dañados)
+ * Si esParcial = true, excluye del reclamo los artículos sin conteo ni rotura.
  */
-export const calcularDiscrepanciasReclamo = (items: AuditoriaItem[], camion: CamionNAE) => {
+export const calcularDiscrepanciasReclamo = (
+  items: AuditoriaItem[], 
+  camion: CamionNAE,
+  esParcial: boolean = false
+) => {
   let totalMontoReclamado = 0;
   let cantUnidadesAfectadas = 0;
   const skuSet = new Set<string>();
@@ -67,6 +72,11 @@ export const calcularDiscrepanciasReclamo = (items: AuditoriaItem[], camion: Cam
     const cantDanada = Number((Number(it.cantidad_danada || 0)).toFixed(3));
     const costoUnitarioRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
 
+    // EN CIERRE PARCIAL: ignorar productos sin interacción real (conteo === 0 y rotura === 0)
+    if (esParcial && uFisicas === 0 && cantDanada === 0 && !isSobranteNoFact) {
+      return;
+    }
+
     // 1. NO FACTURADOS: es_sobrante_no_facturado || depto 999 || uEsp === 0 con unidades escaneadas
     if (isSobranteNoFact && uFisicas > 0) {
       const cantNoFact = Number(uFisicas.toFixed(3));
@@ -83,7 +93,7 @@ export const calcularDiscrepanciasReclamo = (items: AuditoriaItem[], camion: Cam
         totalReclamado: totNoFact
       });
     } else if (!isSobranteNoFact) {
-      // 2. FALTANTES: uFisicas < uEsp
+      // 2. FALTANTES: uFisicas < uEsp sobre lo auditado
       if (uFisicas < uEsp) {
         const cantFaltante = Number((uEsp - uFisicas).toFixed(3));
         if (cantFaltante > 0) {
@@ -176,16 +186,19 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
     console.warn('⚠️ Nota: No se pudo consultar la tabla reclamos_magma en Supabase, utilizando caché local:', err);
   }
 
-  // 2. Identificar camiones CERRADOS o FINALIZADOS (con filtro insensible a mayúsculas/espacios)
+  // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
   const camionesCerrados = camiones.filter(c => {
     const est = (c.estado || '').trim().toUpperCase();
-    return est === 'CERRADO' || est === 'FINALIZADO';
+    return est.includes('CERRADO') || est.includes('FINALIZADO');
   });
 
   const resultReclamos: ReclamoMagma[] = [];
   const updatedLocalMap = { ...localMap };
 
   for (const camion of camionesCerrados) {
+    const estUpper = (camion.estado || '').trim().toUpperCase();
+    const esParcial = estUpper.includes('PARCIAL');
+
     // Buscar reclamo existente por nae_id O por nae_numero
     let reclamo = dbReclamos.find(r => 
       (r.nae_id && r.nae_id === camion.id) || 
@@ -195,7 +208,6 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
     );
 
-    // Si no existe o si existe pero está PENDIENTE / sin SKUs calculados, recalculamos las discrepancias
     try {
       const { data: items } = await supabase
         .from('auditoria_items')
@@ -203,9 +215,9 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         .eq('nae_id', camion.id);
 
       const itemsList = items || [];
-      const discEval = evaluarDiscrepanciasCamion(itemsList);
+      const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
 
-      // Si el camión es 100% conforme, NUNCA debe generar un reclamo Magma
+      // Si el camión es 100% conforme (o en parcial no tiene desvíos sobre lo auditado), OMITIR reclamo Magma
       if (discEval.es100Conforme) {
         if (reclamo) {
           try {
@@ -217,7 +229,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         continue;
       }
 
-      const disc = calcularDiscrepanciasReclamo(itemsList, camion);
+      const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
 
       if (reclamo) {
         // Actualizar métricas del reclamo existente si estaba PENDIENTE o con 0 skus

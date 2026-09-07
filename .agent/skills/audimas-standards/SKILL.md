@@ -37,7 +37,7 @@ Este Agent Skill define las reglas de negocio, esquema de base de datos, estánd
 - **Cero Discrepancias**: Si un camión finaliza con 0 discrepancias (0 faltantes, 0 sobrantes, 0 roturas y 0 sin contar), **NUNCA** debe generar un reclamo en Magma.
 
 ### Auditoría Parcial
-- Al finalizar parcialmente un camión, solo se imputan diferencias sobre los ítems efectivamente auditados (conteo `>= 1` unidad o `>= 0.01` kg).
+- La acción 'Finalizar Parcial' excluye del balance de diferencias e impacto de Magma a todos los productos sin conteo ni rotura, procesando solo los ítems escaneados.
 
 ---
 

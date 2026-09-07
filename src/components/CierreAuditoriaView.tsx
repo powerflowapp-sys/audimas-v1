@@ -133,6 +133,7 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
   // Modal de Cierre
   const [isConfirmCloseOpen, setIsConfirmCloseOpen] = useState<boolean>(false);
+  const [isConfirmPartialCloseOpen, setIsConfirmPartialCloseOpen] = useState<boolean>(false);
   const [isConfirmReopenOpen, setIsConfirmReopenOpen] = useState<boolean>(false);
   const [isClosing, setIsClosing] = useState<boolean>(false);
   const [isReopening, setIsReopening] = useState<boolean>(false);
@@ -390,6 +391,40 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
     }
   };
 
+  // Cierre parcial del camión
+  const handleConfirmPartialClose = async () => {
+    setIsClosing(true);
+    try {
+      const activeUser = (localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
+      const res = await cerrarCamionNae(naeId, activeUser, true);
+      setCloseResult(res);
+
+      if (camion) {
+        const isReopened = Boolean(camion.fecha_reapertura);
+        const camionCerrado: CamionNAE = { 
+          ...camion, 
+          estado: 'CERRADO_PARCIAL', 
+          fecha_fin_auditoria: isReopened ? camion.fecha_fin_auditoria : new Date().toISOString(),
+          fecha_fin_reapertura: isReopened ? new Date().toISOString() : camion.fecha_fin_reapertura,
+          usuario_fin_auditoria: isReopened ? camion.usuario_fin_auditoria : activeUser,
+          usuario_cierre_reapertura: isReopened ? activeUser : camion.usuario_cierre_reapertura
+        };
+        setCamion(camionCerrado);
+        if (onNaeClosed) onNaeClosed();
+        await guardarSnapshotReporte(camionCerrado, items, productividad);
+      }
+      setCloseSuccess(true);
+      if (onNaeClosed) {
+        onNaeClosed();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al cerrar auditoría parcial');
+    } finally {
+      setIsClosing(false);
+      setIsConfirmPartialCloseOpen(false);
+    }
+  };
+
   // Reapertura formal del camión
   const handleConfirmReopen = async () => {
     setIsReopening(true);
@@ -439,13 +474,15 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                 Resumen NAE #{camion?.numero_nae || '---'}
               </h1>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold ${
-                camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' 
+                camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' 
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
                   : camion?.estado === 'EN_PROCESO'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
               }`}>
-                {camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' ? 'FINALIZADO' : camion?.estado === 'EN_PROCESO' ? 'EN PROCESO' : 'PENDIENTE'}
+                {camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL' ? 'CERRADO PARCIAL' : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' ? 'FINALIZADO' : camion?.estado === 'EN_PROCESO' ? 'EN PROCESO' : 'PENDIENTE'}
               </span>
             </div>
             <p className="text-[11px] text-sky-400/80 font-medium truncate max-w-[200px]">
@@ -857,17 +894,73 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
         )}
       </main>
 
-      {/* CÁPSULA FLOTANTE "FINALIZAR AUDITORÍA" (SOLO EN PROCESO / PENDIENTE) */}
-      {camion?.estado !== 'FINALIZADO' && camion?.estado !== 'CERRADO' && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
+      {/* CÁPSULA FLOTANTE "FINALIZAR PARCIAL" Y "FINALIZAR AUDITORÍA" (SOLO EN PROCESO / PENDIENTE) */}
+      {camion?.estado !== 'FINALIZADO' && camion?.estado !== 'CERRADO' && camion?.estado !== 'CERRADO_PARCIAL' && camion?.estado !== 'FINALIZADO_PARCIAL' && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsConfirmPartialCloseOpen(true)}
+            className="px-4 py-2.5 bg-[#1a1202]/95 hover:bg-amber-950/90 hover:text-amber-200 border border-amber-500/60 text-amber-300 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-amber-950/50 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+          >
+            <Clock className="w-4 h-4 text-amber-400" />
+            <span>Finalizar Parcial</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsConfirmCloseOpen(true)}
-            className="px-5 py-2.5 bg-slate-900/90 hover:bg-red-950/80 hover:text-red-200 hover:border-red-400 border border-red-500/50 text-red-300 font-['Chakra_Petch'] font-semibold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-red-950/40 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            className="px-4 py-2.5 bg-slate-900/95 hover:bg-red-950/80 hover:text-red-200 hover:border-red-400 border border-red-500/50 text-red-300 font-['Chakra_Petch'] font-semibold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-red-950/40 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
           >
-            <span className="text-sm">🛑</span>
+            <ShieldCheck className="w-4 h-4 text-red-400" />
             <span>Finalizar Auditoría</span>
           </button>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE CIERRE PARCIAL */}
+      {isConfirmPartialCloseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-3xl p-5 space-y-4 shadow-2xl text-center">
+            <div className="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto border border-amber-500/30">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="font-extrabold text-base text-white font-['Chakra_Petch'] uppercase tracking-wide">
+                CERRAR AUDITORÍA PARCIAL
+              </h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed bg-[#05132d] p-3 rounded-xl border border-amber-500/20 text-left">
+                ¿Confirmas el cierre parcial de este camión? Únicamente se calcularán faltantes, sobrantes y roturas de los artículos efectivamente escaneados (conteo &gt; 0 o rotura &gt; 0). Todos los ítems sin contar quedarán excluidos de los reclamos y no sumarán diferencias monetarias.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmPartialCloseOpen(false)}
+                disabled={isClosing}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmPartialClose}
+                disabled={isClosing}
+                className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center space-x-1.5"
+              >
+                {isClosing ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Clock className="w-4 h-4" />
+                    <span>CONFIRMAR CIERRE PARCIAL</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

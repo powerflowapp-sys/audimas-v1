@@ -16,7 +16,7 @@ export interface CamionNAE {
   tienda_codigo: string;
   tienda_nombre: string;
   fecha_arribo?: string;
-  estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO';
+  estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO' | 'CERRADO_PARCIAL' | 'FINALIZADO_PARCIAL';
   fecha_inicio_auditoria?: string;
   fecha_fin_auditoria?: string;
   fecha_fin?: string;

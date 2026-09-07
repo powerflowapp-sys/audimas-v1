@@ -421,7 +421,10 @@ export interface DiscrepanciasCamion {
   es100Conforme: boolean;
 }
 
-export const evaluarDiscrepanciasCamion = (items: AuditoriaItem[]): DiscrepanciasCamion => {
+export const evaluarDiscrepanciasCamion = (
+  items: AuditoriaItem[], 
+  esParcial: boolean = false
+): DiscrepanciasCamion => {
   let cantFaltantes = 0;
   let cantSobrantes = 0;
   let cantDaniados = 0;
@@ -441,6 +444,12 @@ export const evaluarDiscrepanciasCamion = (items: AuditoriaItem[]): Discrepancia
       return;
     }
 
+    // EN CIERRE PARCIAL: si el producto no tuvo interacción real (conteo === 0 y rotura === 0)
+    // Se ignora del balance de diferencias (no se imputa faltante ni sin contar)
+    if (esParcial && totalFisico === 0 && cantDan === 0 && !isSobranteNoFact) {
+      return;
+    }
+
     // 1. Mercadería dañada / roturas
     if (cantDan > 0) {
       cantDaniados += cantDan;
@@ -454,10 +463,11 @@ export const evaluarDiscrepanciasCamion = (items: AuditoriaItem[]): Discrepancia
     } else {
       // 3. Ítems del manifiesto
       if (totalFisico === 0 && bEsc === 0 && uEscRaw === 0 && uEsp > 0) {
-        // Artículo sin contar (conteo = 0 y facturado > 0)
-        cantSinContar += 1;
+        if (!esParcial) {
+          cantSinContar += 1;
+        }
       } else if (totalFisico < uEsp) {
-        // Faltante (conteo < facturado)
+        // Faltante (conteo < facturado) sobre lo auditado
         const dif = Number((uEsp - totalFisico).toFixed(3));
         if (dif > 0) cantFaltantes += dif;
       } else if (totalFisico > uEsp && uEsp > 0) {
@@ -472,7 +482,7 @@ export const evaluarDiscrepanciasCamion = (items: AuditoriaItem[]): Discrepancia
   cantSobrantes = Number(cantSobrantes.toFixed(3));
   cantDaniados = Number(cantDaniados.toFixed(3));
 
-  const es100Conforme = cantFaltantes === 0 && cantSobrantes === 0 && cantDaniados === 0 && cantSinContar === 0;
+  const es100Conforme = cantFaltantes === 0 && cantSobrantes === 0 && cantDaniados === 0 && (esParcial ? true : cantSinContar === 0);
 
   return {
     cantFaltantes,
@@ -495,14 +505,16 @@ export interface ResultadoCierreCamion {
 }
 
 /**
- * Cierra formalmente la auditoría del camión NAE en Supabase (estado = 'CERRADO')
+ * Cierra formalmente la auditoría del camión NAE en Supabase (estado = 'CERRADO' o 'CERRADO_PARCIAL')
  * Evalúa contadores independientes de discrepancias:
- * - Si es 100% conforme (cantFaltantes=0, cantSobrantes=0, cantDaniados=0, cantSinContar=0): OMITA inserción en reclamos_magma y registra log.
- * - Si posee diferencias (cantFaltantes>0, cantSobrantes>0, cantDaniados>0 o cantSinContar>0): Genera/actualiza reclamo en reclamos_magma.
+ * - Si esParcial = true: Excluye del balance de diferencias e impacto de Magma a todos los productos sin conteo ni rotura.
+ * - Si es 100% conforme: OMITA inserción en reclamos_magma y registra log.
+ * - Si posee diferencias: Genera/actualiza reclamo en reclamos_magma únicamente por lo auditado.
  */
 export const cerrarCamionNae = async (
   naeId: string, 
-  usuarioResponsable?: string
+  usuarioResponsable?: string,
+  esParcial: boolean = false
 ): Promise<ResultadoCierreCamion> => {
   // Persistir costos aplicados y de reclamo Magma antes de cerrar
   await persisitirCostosReclamoMagma(naeId);
@@ -522,10 +534,12 @@ export const cerrarCamionNae = async (
     .eq('nae_id', naeId);
 
   const itemsList = items || [];
-  const discEval = evaluarDiscrepanciasCamion(itemsList);
+  const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
+
+  const estadoDeseado = esParcial ? 'CERRADO_PARCIAL' : 'CERRADO';
 
   const updateData: any = {
-    estado: 'CERRADO',
+    estado: estadoDeseado,
     updated_at: now
   };
 
@@ -539,10 +553,20 @@ export const cerrarCamionNae = async (
     updateData.usuario_fin_auditoria = activeUser;
   }
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('camiones_nae')
     .update(updateData)
     .eq('id', naeId);
+
+  // Fallback si la DB tiene restricción CHECK sin CERRADO_PARCIAL
+  if (error && esParcial) {
+    updateData.estado = 'CERRADO';
+    const fallbackRes = await supabase
+      .from('camiones_nae')
+      .update(updateData)
+      .eq('id', naeId);
+    error = fallbackRes.error;
+  }
 
   if (error) {
     throw new Error(`No se pudo cerrar la auditoría del camión: ${error.message}`);
@@ -552,7 +576,6 @@ export const cerrarCamionNae = async (
   let mensajeFeedback = '';
 
   if (discEval.es100Conforme) {
-    // CONDICIÓN ESTRICTA DE OMISIÓN: 100% CONFORME
     // OMITIR la inserción en la tabla reclamos_magma
     try {
       await supabase.from('reclamos_magma').delete().eq('nae_id', naeId);
@@ -570,28 +593,25 @@ export const cerrarCamionNae = async (
       }
     } catch (e) {}
 
-    // Registrar en auditoria_logs: "Camión finalizado 100% conforme. Sin faltantes, sobrantes, roturas ni ítems sin contar. No requiere reclamo Magma."
-    const logMsg = "Camión finalizado 100% conforme. Sin faltantes, sobrantes, roturas ni ítems sin contar. No requiere reclamo Magma.";
+    const logMsg = esParcial
+      ? `Camión finalizado de forma PARCIAL por ${activeUser}. Ítems no escaneados excluidos del balance de reclamos.`
+      : "Camión finalizado 100% conforme. Sin faltantes, sobrantes, roturas ni ítems sin contar. No requiere reclamo Magma.";
+
     try {
       await supabase.from('auditoria_logs').insert({
         nae_id: naeId,
-        upc: 'LOG_CIERRE',
+        upc: esParcial ? 'LOG_CIERRE_PARCIAL' : 'LOG_CIERRE',
         colaborador_nombre: activeUser,
         modo_conteo: 'UNIDADES',
         cantidad: 1
       });
     } catch (e) {
-      console.warn('⚠️ Error registrando log de cierre conforme:', e);
+      console.warn('⚠️ Error registrando log de cierre:', e);
     }
 
     mensajeFeedback = logMsg;
   } else {
-    // EXISTEN DISCREPANCIAS (cantFaltantes > 0 || cantSobrantes > 0 || cantDaniados > 0 || cantSinContar > 0)
-    // Proceder con la creación normal del reclamo en la tabla reclamos_magma
-    const camionActualizado: CamionNAE = { ...(currentCamion || {}), ...updateData } as CamionNAE;
-    
-    // Importar dinámicamente o calcular discrepancias de reclamo
-    const uEspTot = itemsList.reduce((acc, it) => acc + Number(it.unidades_esperadas || 0), 0);
+    // EXISTEN DISCREPANCIAS EN LO AUDITADO
     let totalMontoReclamado = 0;
     let cantUnidadesAfectadas = 0;
     const skuSet = new Set<string>();
@@ -599,9 +619,14 @@ export const cerrarCamionNae = async (
     itemsList.forEach(it => {
       const uEsp = Number(it.unidades_esperadas || 0);
       const uFisicas = calcularUnidadesFisicasItem(it);
-      const isSobranteNoFact = Boolean(it.es_sobrante_no_facturado) || (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false);
       const cantDan = Number((Number(it.cantidad_danada || 0)).toFixed(3));
+      const isSobranteNoFact = Boolean(it.es_sobrante_no_facturado) || (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false);
       const costoUnitRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+
+      // En cierre parcial, ignorar ítems sin conteo ni rotura
+      if (esParcial && uFisicas === 0 && cantDan === 0 && !isSobranteNoFact) {
+        return;
+      }
 
       if (isSobranteNoFact && uFisicas > 0) {
         const tot = Number((uFisicas * costoUnitRef).toFixed(2));
@@ -631,6 +656,18 @@ export const cerrarCamionNae = async (
         cantUnidadesAfectadas += cantDan;
       }
     });
+
+    if (esParcial) {
+      try {
+        await supabase.from('auditoria_logs').insert({
+          nae_id: naeId,
+          upc: 'LOG_CIERRE_PARCIAL',
+          colaborador_nombre: activeUser,
+          modo_conteo: 'UNIDADES',
+          cantidad: 1
+        });
+      } catch (e) {}
+    }
 
     const fechaCierre = updateData.fecha_fin_auditoria || updateData.fecha_fin_reapertura || now;
     const newReclamo: any = {
@@ -662,7 +699,9 @@ export const cerrarCamionNae = async (
     } catch (e) {}
 
     reclamoGenerado = true;
-    mensajeFeedback = `Camión finalizado con discrepancias. Se generó automáticamente el reclamo Magma por $${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`;
+    mensajeFeedback = esParcial
+      ? `Camión finalizado de forma PARCIAL por ${activeUser}. Se generó el reclamo Magma únicamente por las diferencias de los ítems auditados ($${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}).`
+      : `Camión finalizado con discrepancias. Se generó automáticamente el reclamo Magma por $${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`;
   }
 
   return {

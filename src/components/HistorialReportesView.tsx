@@ -72,7 +72,7 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
       const { data: camionesData, error } = await supabase
         .from('camiones_nae')
         .select('*')
-        .in('estado', ['CERRADO', 'FINALIZADO'])
+        .in('estado', ['CERRADO', 'FINALIZADO', 'CERRADO_PARCIAL', 'FINALIZADO_PARCIAL'])
         .order('fecha_fin_auditoria', { ascending: false });
 
       if (error) {

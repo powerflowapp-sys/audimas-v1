@@ -147,7 +147,7 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
 
             <div className="p-2.5 bg-slate-950 rounded-2xl border border-slate-800/80 text-center">
               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Total Unidades</span>
-              <span className="text-lg font-black text-blue-400">{item.unidades_escaneadas}</span>
+              <span className="text-lg font-black text-blue-400">{item.unidades_escaneadas} <span className="text-xs font-bold text-slate-400">{getUomLabel(item)}</span></span>
               <span className="text-[10px] text-slate-500 block">/ {item.unidades_esperadas} esperadas</span>
             </div>
           </div>
@@ -184,7 +184,7 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
               const esResta = log.cantidad < 0;
               const cantAbs = Math.abs(log.cantidad);
               const textoCantidad = esResta ? `-${cantAbs}` : `+${log.cantidad}`;
-              const modoText = getScanLogUomLabel(log.modo_conteo, log.cantidad, item.unidad_medida);
+              const modoText = getScanLogUomLabel(log.modo_conteo, log.cantidad, item);
 
               return (
                 <div 

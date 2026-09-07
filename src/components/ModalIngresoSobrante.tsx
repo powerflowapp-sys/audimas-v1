@@ -399,7 +399,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
               <div className="p-2 bg-[#020b18] rounded-xl border border-sky-500/20 text-center">
                 <span className="text-[10px] font-['Chakra_Petch'] font-bold text-sky-400 uppercase tracking-wider block">Facturado Esperado</span>
                 <span className="font-black text-slate-100 text-sm block mt-0.5 font-mono">
-                  {formatNumber(unidadesEsp)} <span className="text-[10px] font-bold text-slate-400">{getUomLabel(masterUom)}</span>
+                  {formatNumber(unidadesEsp)} <span className="text-[10px] font-bold text-slate-400">{getUomLabel(item || masterUom)}</span>
                 </span>
                 {bultosEsp > 0 && (
                   <span className="text-[10px] text-slate-400 block font-medium">
@@ -411,7 +411,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
               <div className="p-2 bg-[#020b18] rounded-xl border border-sky-500/20 text-center">
                 <span className="text-[10px] font-['Chakra_Petch'] font-bold text-sky-400 uppercase tracking-wider block">Ingresado Hasta Ahora</span>
                 <span className="font-black text-sky-300 text-sm block mt-0.5 font-mono">
-                  {formatNumber(totalUnidadesEscaneadas)} <span className="text-[10px] font-bold text-sky-400">{getUomLabel(masterUom)}</span>
+                  {formatNumber(totalUnidadesEscaneadas)} <span className="text-[10px] font-bold text-sky-400">{getUomLabel(item || masterUom)}</span>
                 </span>
                 {Number(item.bultos_escaneados || 0) > 0 && (
                   <span className="text-[10px] text-sky-400/80 block font-medium">
@@ -424,7 +424,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
             <div className="p-2 bg-[#020b18] rounded-xl border border-purple-500/30 text-center">
               <span className="text-[10px] font-['Chakra_Petch'] font-bold text-purple-300 uppercase tracking-wider block">Acumulado Registrado (Sobrante)</span>
               <span className="font-black text-purple-400 text-base block mt-0.5 font-mono">
-                {formatNumber(item?.unidades_escaneadas || 0)} <span className="text-xs font-bold text-purple-300">{getUomLabel(masterUom)}</span>
+                {formatNumber(item?.unidades_escaneadas || 0)} <span className="text-xs font-bold text-purple-300">{getUomLabel(item || masterUom)}</span>
               </span>
             </div>
           )}
@@ -452,7 +452,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
                 <label className="text-[11px] font-['Chakra_Petch'] font-bold text-sky-400 uppercase tracking-wider block">
                   Selecciona Unidad de Conteo:
                 </label>
-                {isItemPesable({ unidad_medida: masterUom, depto_codigo: item?.depto_codigo }) && (
+                {isItemPesable(item || { unidad_medida: masterUom }) && (
                   <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
                     秤 Pesable (Kg/G)
                   </span>
@@ -465,7 +465,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
                     <span>Modo Sobrantes:</span>
                   </span>
                   <span className="px-2 py-0.5 bg-purple-600 text-white rounded font-black text-xs font-mono">
-                    {getUomButtonLabel(masterUom)}
+                    {getUomButtonLabel(item || masterUom)}
                   </span>
                 </div>
               ) : (
@@ -493,7 +493,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>{getUomButtonLabel(masterUom)}</span>
+                    <span>{getUomButtonLabel(item || masterUom)}</span>
                   </button>
                 </div>
               )}
@@ -528,7 +528,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
               <div className="p-2 bg-blue-950/70 border border-blue-500/40 rounded-xl text-center text-xs text-blue-200 animate-fade-in flex items-center justify-center space-x-2 font-medium shadow-inner">
                 <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>
-                  💡 <strong>{formatNumber(parsedCantidad)} {Math.abs(parsedCantidad) === 1 ? 'bulto' : 'bultos'}</strong> = <strong>{formatNumber(parsedCantidad * unidadesPorBulto)} {getUomLabel(masterUom)}</strong> ({formatNumber(unidadesPorBulto)} {getUomLabel(masterUom)}/bulto).
+                  💡 <strong>{formatNumber(parsedCantidad)} {Math.abs(parsedCantidad) === 1 ? 'bulto' : 'bultos'}</strong> = <strong>{formatNumber(parsedCantidad * unidadesPorBulto)} {getUomLabel(item || masterUom)}</strong> ({formatNumber(unidadesPorBulto)} {getUomLabel(item || masterUom)}/bulto).
                 </span>
               </div>
             )}
@@ -729,7 +729,7 @@ export const ModalIngresoSobrante: React.FC<ModalIngresoSobranteProps> = ({
                 const cant = Number(log.cantidad || 0);
                 const esResta = cant < 0;
                 const cantFormateada = cant > 0 ? `+${formatNumber(cant)}` : `${formatNumber(cant)}`;
-                const modoLabel = getScanLogUomLabel(log.modo_conteo, cant, masterUom);
+                const modoLabel = getScanLogUomLabel(log.modo_conteo, cant, item || masterUom);
 
                 return (
                   <div 

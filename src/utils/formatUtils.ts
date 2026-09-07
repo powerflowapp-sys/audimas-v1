@@ -33,10 +33,10 @@ export const resolverUnidadMedidaItem = (item: any): string => {
   // Caso B: Si el departamento SÍ está en la lista blanca (21, 43, 93, 94, 98):
   // Evaluar únicamente el campo unidad_medida del archivo maestro
   const rawUom = String(item.unidad_medida || '').toUpperCase().trim();
-  if (rawUom.includes('KG') || rawUom.includes('KGS') || rawUom.includes('G') || rawUom === 'KILO' || rawUom === 'KILOS') {
+  if (rawUom === 'KG' || rawUom === 'KGS' || rawUom === 'KILO' || rawUom === 'KILOS' || rawUom.startsWith('KG ')) {
     return 'KG';
   }
-  if (rawUom.includes('L') || rawUom.includes('LT') || rawUom === 'LITRO' || rawUom === 'LITROS') {
+  if (rawUom === 'L' || rawUom === 'LT' || rawUom === 'LTS' || rawUom === 'LITRO' || rawUom === 'LITROS' || rawUom.startsWith('LT ')) {
     return 'L';
   }
   return 'UN';
@@ -96,9 +96,8 @@ export const getUomLabel = (uomOrItem?: any, itemContext?: any): string => {
   }
 
   const cleanUom = String(uomOrItem || '').toUpperCase().trim();
-  if (cleanUom === 'KG' || cleanUom === 'KILO' || cleanUom === 'KILOS' || cleanUom === 'KGS') return 'kg';
-  if (cleanUom === 'L' || cleanUom === 'LITRO' || cleanUom === 'LITROS' || cleanUom === 'LT') return 'L';
-  if (cleanUom === 'G' || cleanUom === 'GR' || cleanUom === 'GRAMO' || cleanUom === 'GRAMOS') return 'g';
+  if (cleanUom === 'KG' || cleanUom === 'KILO' || cleanUom === 'KILOS' || cleanUom === 'KGS' || cleanUom.startsWith('KG ')) return 'kg';
+  if (cleanUom === 'L' || cleanUom === 'LITRO' || cleanUom === 'LITROS' || cleanUom === 'LT' || cleanUom === 'LTS' || cleanUom.startsWith('LT ')) return 'L';
   return 'un';
 };
 
@@ -109,7 +108,7 @@ export const getUomLabel = (uomOrItem?: any, itemContext?: any): string => {
  * - UN / otra -> 'POR UNIDADES (UN)'
  */
 export const getUomButtonLabel = (uomOrItem?: any, itemContext?: any): string => {
-  if (!uomOrItem && !itemContext) return 'POR UNIDADES';
+  if (!uomOrItem && !itemContext) return 'POR UNIDADES (UN)';
 
   const itemObj = (typeof uomOrItem === 'object' && uomOrItem !== null)
     ? uomOrItem
@@ -125,19 +124,19 @@ export const getUomButtonLabel = (uomOrItem?: any, itemContext?: any): string =>
   }
 
   const cleanUom = String(uomOrItem || '').toUpperCase().trim();
-  if (cleanUom === 'KG' || cleanUom === 'KILO' || cleanUom === 'KILOS' || cleanUom === 'KGS') return 'POR KILOS (KG)';
-  if (cleanUom === 'L' || cleanUom === 'LITRO' || cleanUom === 'LITROS' || cleanUom === 'LT') return 'POR LITROS (L)';
-  return 'POR UNIDADES';
+  if (cleanUom === 'KG' || cleanUom === 'KILO' || cleanUom === 'KILOS' || cleanUom === 'KGS' || cleanUom.startsWith('KG ')) return 'POR KILOS (KG)';
+  if (cleanUom === 'L' || cleanUom === 'LITRO' || cleanUom === 'LITROS' || cleanUom === 'LT' || cleanUom === 'LTS' || cleanUom.startsWith('LT ')) return 'POR LITROS (L)';
+  return 'POR UNIDADES (UN)';
 };
 
 /**
  * Retorna la etiqueta formateada para los ítems del historial de escaneos:
- * - Si modo === 'BULTOS' -> 'Bulto' o 'Bultos'
- * - Si modo === 'UNIDADES' -> 'kg', 'L', 'g', 'un'
+ * - Si modo === 'BULTOS' -> 'bulto' o 'bultos'
+ * - Si modo === 'UNIDADES' -> 'kg', 'L', 'un'
  */
 export const getScanLogUomLabel = (modo: string | undefined, cant: number, uomOrItem?: any, itemContext?: any): string => {
   if (modo === 'BULTOS') {
-    return Math.abs(cant) === 1 ? 'Bulto' : 'Bultos';
+    return Math.abs(cant) === 1 ? 'bulto' : 'bultos';
   }
   return getUomLabel(uomOrItem, itemContext);
 };

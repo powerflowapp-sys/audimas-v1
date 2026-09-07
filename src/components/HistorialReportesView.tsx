@@ -12,7 +12,9 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
-  Lock
+  Lock,
+  Eye,
+  Scan
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { 
@@ -36,6 +38,8 @@ import { ConfirmModal } from './ConfirmModal';
 interface HistorialReportesViewProps {
   onBack: () => void;
   onReopenAndScan?: (naeId: string) => void;
+  onOpenScan?: (naeId: string) => void;
+  onOpenCierre?: (naeId: string) => void;
 }
 
 interface ReporteHistorialItem {
@@ -50,7 +54,9 @@ interface ReporteHistorialItem {
 
 export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ 
   onBack,
-  onReopenAndScan
+  onReopenAndScan,
+  onOpenScan,
+  onOpenCierre
 }) => {
   const [reportes, setReportes] = useState<ReporteHistorialItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -404,12 +410,32 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                     )}
                   </button>
 
-                  {/* Botones de Acción: Descargar Excel, Reabrir Auditoría y Eliminar Reporte */}
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                  {/* Botones de Acción: Ver/Continuar, Descargar Excel, Reabrir Auditoría y Eliminar Reporte */}
+                  <div className={`grid gap-2 ${onOpenScan ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-[1fr_1fr_auto]'}`}>
+                    {onOpenScan && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenScan(cam.id)}
+                        className="py-2.5 px-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center space-x-1 shadow-md shadow-blue-600/30 transition-all active:scale-95 cursor-pointer"
+                      >
+                        {cam.estado === 'EN_PROCESO' ? (
+                          <>
+                            <Scan className="w-3.5 h-3.5 text-white" />
+                            <span>Continuar</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3.5 h-3.5 text-white" />
+                            <span>Ver</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+
                     <button
                       onClick={() => handleDownload(item)}
                       disabled={isDownloading}
-                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/30 w-full transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                      className="py-2.5 px-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/30 w-full transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                     >
                       {isDownloading ? (
                         <>

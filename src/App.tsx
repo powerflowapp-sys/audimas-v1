@@ -842,7 +842,8 @@ export const App: React.FC = () => {
           ) : (
             camiones.map((cam) => {
               const estUpper = (cam.estado || '').trim().toUpperCase();
-              const esCerrado = estUpper === 'FINALIZADO' || estUpper === 'CERRADO';
+              const esCierreParcial = isCamionCierreParcial(cam);
+              const esCerrado = estUpper === 'FINALIZADO' || estUpper === 'CERRADO' || estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL' || esCierreParcial;
 
               return (
                 <div
@@ -1199,6 +1200,8 @@ export const App: React.FC = () => {
               fetchCamiones();
               navigateTo('LIST');
             }}
+            onOpenScan={(naeId) => navigateTo('SCAN', naeId)}
+            onOpenCierre={(naeId) => navigateTo('CIERRE', naeId)}
             onReopenAndScan={async (naeId) => {
               await fetchCamiones();
               navigateTo('SCAN', naeId);

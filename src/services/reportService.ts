@@ -717,6 +717,25 @@ export const cerrarCamionNae = async (
     };
 
     try {
+      // Verificar si ya existía un reclamo con selección manual previa
+      const { data: existingRec } = await supabase
+        .from('reclamos_magma')
+        .select('*')
+        .eq('nae_id', naeId)
+        .maybeSingle();
+
+      if (existingRec && existingRec.seleccion_manual) {
+        newReclamo.monto_total_reclamado = existingRec.monto_total_reclamado;
+        newReclamo.cant_skus_afectados = existingRec.cant_skus_afectados;
+        newReclamo.cant_unidades_afectadas = existingRec.cant_unidades_afectadas;
+        newReclamo.items_seleccionados = existingRec.items_seleccionados;
+        newReclamo.seleccion_manual = true;
+        newReclamo.monto_discrepancias_total = Number(totalMontoReclamado.toFixed(2));
+      } else {
+        newReclamo.monto_discrepancias_total = Number(totalMontoReclamado.toFixed(2));
+        newReclamo.seleccion_manual = false;
+      }
+
       // Limpiar reclamos obsoletos antes de upsert
       await supabase.from('reclamos_magma').delete().eq('nae_id', naeId);
       if (currentCamion?.numero_nae) {

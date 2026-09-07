@@ -341,14 +341,26 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       }
 
       if (reclamo) {
-        // SIEMPRE recalcular métricas del reclamo existente para reflejar el cierre actual (sea parcial o total)
-        reclamo = {
-          ...reclamo,
-          monto_total_reclamado: disc.totalMontoReclamado,
-          cant_skus_afectados: disc.cantSkusAfectados,
-          cant_unidades_afectadas: disc.cantUnidadesAfectadas,
-          updated_at: new Date().toISOString()
-        };
+        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO: Preservar montos y selección
+        if (reclamo.seleccion_manual) {
+          reclamo = {
+            ...reclamo,
+            monto_discrepancias_total: disc.totalMontoReclamado,
+            updated_at: new Date().toISOString()
+          };
+        } else {
+          // Si no es manual, recalcular automáticamente con la auditoría
+          reclamo = {
+            ...reclamo,
+            monto_total_reclamado: disc.totalMontoReclamado,
+            monto_discrepancias_total: disc.totalMontoReclamado,
+            cant_skus_afectados: disc.cantSkusAfectados,
+            cant_unidades_afectadas: disc.cantUnidadesAfectadas,
+            items_seleccionados: disc.itemsDiscrepantes.map(d => d.itemKey),
+            seleccion_manual: false,
+            updated_at: new Date().toISOString()
+          };
+        }
         try {
           await supabase.from('reclamos_magma').upsert([reclamo], { onConflict: 'id' });
         } catch (e) {}
@@ -369,8 +381,11 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           tienda_nombre: camion.tienda_nombre,
           estado: 'PENDIENTE',
           monto_total_reclamado: disc.totalMontoReclamado,
+          monto_discrepancias_total: disc.totalMontoReclamado,
           cant_skus_afectados: disc.cantSkusAfectados,
           cant_unidades_afectadas: disc.cantUnidadesAfectadas,
+          items_seleccionados: disc.itemsDiscrepantes.map(d => d.itemKey),
+          seleccion_manual: false,
           fecha_cierre_auditoria: fechaCierre,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -696,6 +711,9 @@ export const exportarPlanillaReclamoMagmaExcel = async (
     fecha_ultima_exportacion: nowIso,
     estado: reclamo.estado === 'PENDIENTE' ? 'EXPORTADO' : reclamo.estado,
     monto_total_reclamado: montoTotalExportado,
-    items_seleccionados: activeKeys
+    items_seleccionados: activeKeys,
+    cant_skus_afectados: cantSkusExportados,
+    cant_unidades_afectadas: cantUnidadesExportadas,
+    seleccion_manual: reclamo.seleccion_manual ?? (activeKeys ? true : false)
   });
 };

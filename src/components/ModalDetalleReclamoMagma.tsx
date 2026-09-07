@@ -78,8 +78,8 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
           // Inicializar selección calculando sobre el camión enriquecido (respetando esParcial)
           const disc = calcularDiscrepanciasReclamo(loadedItems, finalCamion);
           
-          if (reclamo.items_seleccionados && reclamo.items_seleccionados.length > 0) {
-            setSelectedKeys(new Set(reclamo.items_seleccionados));
+          if (reclamo.seleccion_manual || Array.isArray(reclamo.items_seleccionados)) {
+            setSelectedKeys(new Set(reclamo.items_seleccionados || []));
           } else {
             // Por defecto, seleccionar el 100% de los ítems discrepantes de lo auditado
             setSelectedKeys(new Set(disc.itemsDiscrepantes.map(d => d.itemKey)));
@@ -164,6 +164,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
   const selectedSkusSet = new Set(selectedDiscrepancias.map(d => d.item.sku));
   const countSelectedSkus = selectedSkusSet.size;
   const countTotalSkus = disc.cantSkusAfectados;
+  const countSelectedUnits = Number(selectedDiscrepancias.reduce((sum, d) => sum + d.cantidadAfectada, 0).toFixed(3));
 
   const isAllSelected = disc.itemsDiscrepantes.length > 0 && selectedKeys.size === disc.itemsDiscrepantes.length;
 
@@ -190,10 +191,14 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
   const handleSaveSelection = async () => {
     setIsSaving(true);
     try {
+      const keysArray = Array.from(selectedKeys);
       const updated = await updateReclamoMagma(reclamo.id, {
-        items_seleccionados: Array.from(selectedKeys),
+        items_seleccionados: keysArray,
         monto_total_reclamado: totalSeleccionadoMagma,
-        monto_discrepancias_total: totalDiscrepanciasAuditoria
+        monto_discrepancias_total: totalDiscrepanciasAuditoria,
+        cant_skus_afectados: countSelectedSkus,
+        cant_unidades_afectadas: countSelectedUnits,
+        seleccion_manual: true
       });
       if (onSelectionSaved) onSelectionSaved(updated);
       setSaveToast(true);

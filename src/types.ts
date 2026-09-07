@@ -212,6 +212,7 @@ export interface ReclamoMagma {
   monto_total_reclamado: number;
   monto_discrepancias_total?: number;
   items_seleccionados?: string[];
+  seleccion_manual?: boolean;
   monto_liquidado?: number;
   observaciones?: string;
   cant_skus_afectados?: number;

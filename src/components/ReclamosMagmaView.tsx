@@ -117,12 +117,13 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
 
   const handleExportQuick = async (r: ReclamoMagma) => {
     try {
+      const targetCamion = camiones.find(c => c.id === r.nae_id || c.numero_nae === r.nae_numero);
       const { data: items } = await supabase
         .from('auditoria_items')
         .select('*')
         .eq('nae_id', r.nae_id);
 
-      await exportarPlanillaReclamoMagmaExcel(r, items || []);
+      await exportarPlanillaReclamoMagmaExcel(r, items || [], undefined, targetCamion);
       loadReclamos();
     } catch (err) {
       console.warn('Error al exportar rápida:', err);
@@ -465,6 +466,7 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
           onClose={() => setSelectedForDetalle(null)}
           onExportExcel={() => loadReclamos()}
           onSelectionSaved={(updated) => handleSavedReclamo(updated)}
+          camion={camiones.find(c => c.id === selectedForDetalle.nae_id || c.numero_nae === selectedForDetalle.nae_numero)}
         />
       )}
     </div>

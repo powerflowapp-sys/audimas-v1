@@ -360,15 +360,19 @@ export const updateReclamoMagma = async (
 export const exportarPlanillaReclamoMagmaExcel = async (
   reclamo: ReclamoMagma,
   items: AuditoriaItem[],
-  selectedKeys?: string[]
+  selectedKeys?: string[],
+  camionInput?: CamionNAE
 ) => {
-  const camion: CamionNAE = {
+  let camion: CamionNAE = camionInput || {
     id: reclamo.nae_id,
     numero_nae: reclamo.nae_numero,
     tienda_codigo: reclamo.tienda_codigo,
     tienda_nombre: reclamo.tienda_nombre,
     estado: 'CERRADO'
   };
+
+  const enrichedList = await enriquecerCamionesConLogsParciales([camion]);
+  camion = enrichedList[0] || camion;
 
   const disc = calcularDiscrepanciasReclamo(items, camion);
   const activeKeys = selectedKeys || reclamo.items_seleccionados;

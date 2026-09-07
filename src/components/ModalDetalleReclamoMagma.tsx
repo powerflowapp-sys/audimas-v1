@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Download, Search, Check, FileSpreadsheet, Save, CheckSquare, Square } from 'lucide-react';
-import { AuditoriaItem, CamionNAE, ReclamoMagma } from '../types';
+import { AuditoriaItem, CamionNAE, ReclamoMagma, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
 import { calcularDiscrepanciasReclamo, exportarPlanillaReclamoMagmaExcel, updateReclamoMagma } from '../services/reclamosService';
+import { enriquecerCamionesConLogsParciales } from '../services/reportService';
 import { getUomLabel } from '../utils/formatUtils';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
   onClose: () => void;
   onExportExcel: () => void;
   onSelectionSaved?: (updated: ReclamoMagma) => void;
+  camion?: CamionNAE;
 }
 
 export const ModalDetalleReclamoMagma: React.FC<Props> = ({
@@ -18,9 +20,11 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
   isOpen,
   onClose,
   onExportExcel,
-  onSelectionSaved
+  onSelectionSaved,
+  camion: camionInput
 }) => {
   const [items, setItems] = useState<AuditoriaItem[]>([]);
+  const [camionObj, setCamionObj] = useState<CamionNAE | null>(camionInput || null);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -35,6 +39,31 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
     const loadItems = async () => {
       setLoading(true);
       try {
+        // 1. Obtener la cabecera real del camión si no fue provista por props
+        let targetCamion: CamionNAE = camionInput || {
+          id: reclamo.nae_id,
+          numero_nae: reclamo.nae_numero,
+          tienda_codigo: reclamo.tienda_codigo,
+          tienda_nombre: reclamo.tienda_nombre,
+          estado: 'CERRADO'
+        };
+
+        if (!camionInput) {
+          const { data: dbCamion } = await supabase
+            .from('camiones_nae')
+            .select('*')
+            .eq('id', reclamo.nae_id)
+            .maybeSingle();
+
+          if (dbCamion) {
+            targetCamion = dbCamion as CamionNAE;
+          }
+        }
+
+        // Enriquecer preventivamente con logs para asegurar el flag parcial
+        const enriched = await enriquecerCamionesConLogsParciales([targetCamion]);
+        const finalCamion = enriched[0] || targetCamion;
+
         const { data } = await supabase
           .from('auditoria_items')
           .select('*')
@@ -43,21 +72,15 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
         if (isMounted) {
           const loadedItems = data || [];
           setItems(loadedItems);
+          setCamionObj(finalCamion);
 
-          // Inicializar selección
-          const camion: CamionNAE = {
-            id: reclamo.nae_id,
-            numero_nae: reclamo.nae_numero,
-            tienda_codigo: reclamo.tienda_codigo,
-            tienda_nombre: reclamo.tienda_nombre,
-            estado: 'CERRADO'
-          };
-          const disc = calcularDiscrepanciasReclamo(loadedItems, camion);
+          // Inicializar selección calculando sobre el camión enriquecido (respetando esParcial)
+          const disc = calcularDiscrepanciasReclamo(loadedItems, finalCamion);
           
           if (reclamo.items_seleccionados && reclamo.items_seleccionados.length > 0) {
             setSelectedKeys(new Set(reclamo.items_seleccionados));
           } else {
-            // Por defecto, seleccionar el 100% de los ítems discrepantes
+            // Por defecto, seleccionar el 100% de los ítems discrepantes de lo auditado
             setSelectedKeys(new Set(disc.itemsDiscrepantes.map(d => d.itemKey)));
           }
         }
@@ -70,11 +93,11 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
 
     loadItems();
     return () => { isMounted = false; };
-  }, [isOpen, reclamo.nae_id]);
+  }, [isOpen, reclamo.nae_id, camionInput]);
 
   if (!isOpen) return null;
 
-  const camion: CamionNAE = {
+  const activeCamion: CamionNAE = camionObj || camionInput || {
     id: reclamo.nae_id,
     numero_nae: reclamo.nae_numero,
     tienda_codigo: reclamo.tienda_codigo,
@@ -82,7 +105,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
     estado: 'CERRADO'
   };
 
-  const disc = calcularDiscrepanciasReclamo(items, camion);
+  const disc = calcularDiscrepanciasReclamo(items, activeCamion);
 
   const filteredDiscrepancias = disc.itemsDiscrepantes.filter(d => {
     if (!searchQuery.trim()) return true;
@@ -149,7 +172,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
 
   const handleExport = async () => {
     const keysArray = Array.from(selectedKeys);
-    await exportarPlanillaReclamoMagmaExcel(reclamo, items, keysArray);
+    await exportarPlanillaReclamoMagmaExcel(reclamo, items, keysArray, activeCamion);
     onExportExcel();
   };
 

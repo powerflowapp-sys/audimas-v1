@@ -340,11 +340,14 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         continue;
       }
 
+      const fechaCierre = camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
+
       if (reclamo) {
         // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO: Preservar montos y selección
         if (reclamo.seleccion_manual) {
           reclamo = {
             ...reclamo,
+            fecha_cierre_auditoria: fechaCierre,
             monto_discrepancias_total: disc.totalMontoReclamado,
             updated_at: new Date().toISOString()
           };
@@ -352,6 +355,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           // Si no es manual, recalcular automáticamente con la auditoría
           reclamo = {
             ...reclamo,
+            fecha_cierre_auditoria: fechaCierre,
             monto_total_reclamado: disc.totalMontoReclamado,
             monto_discrepancias_total: disc.totalMontoReclamado,
             cant_skus_afectados: disc.cantSkusAfectados,
@@ -371,8 +375,6 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
 
       // Si no existía reclamo registrado y tiene desvíos (cantFaltantes > 0 || cantSobrantes > 0 || cantDaniados > 0 || cantSinContar > 0)
       if (disc.cantSkusAfectados > 0 || disc.totalMontoReclamado > 0) {
-        const fechaCierre = camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
-        
         const newReclamo: ReclamoMagma = {
           id: `rec_${camion.id}`,
           nae_id: camion.id,
@@ -390,6 +392,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
+
 
         try {
           await supabase.from('reclamos_magma').upsert([newReclamo], { onConflict: 'id' });

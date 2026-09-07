@@ -991,8 +991,72 @@ export const fetchTrazabilidadCamion = async (naeId: string, camion: CamionNAE):
     });
   }
 
-  return eventos;
+  // Ordenar TODOS los eventos estrictamente por fecha timestamp ASCENDENTE
+  return eventos.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 };
+
+/**
+ * Devuelve la lista de eventos de trazabilidad de un camión ordenados estrictamente
+ * por su marca de tiempo (timestamp) en formato ASCENDENTE.
+ */
+export const obtenerEventosTrazabilidadOrdenados = (camion: CamionNAE, evtsFromMap?: EventoTrazabilidad[]): EventoTrazabilidad[] => {
+  if (evtsFromMap && evtsFromMap.length > 0) {
+    return [...evtsFromMap].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+  }
+
+  const eventos: EventoTrazabilidad[] = [];
+  const isParcial = Boolean(camion.es_parcial) || camion.tipo_cierre === 'PARCIAL' || (camion.estado || '').includes('PARCIAL');
+
+  if (camion.created_at) {
+    eventos.push({
+      tipo: 'CARGA',
+      titulo: 'Carga en Sistema',
+      fecha: camion.created_at,
+      usuario: camion.usuario_carga
+    });
+  }
+
+  if (camion.fecha_inicio_auditoria) {
+    eventos.push({
+      tipo: 'INICIO',
+      titulo: 'Inicio descarga',
+      fecha: camion.fecha_inicio_auditoria,
+      usuario: camion.usuario_inicio_auditoria
+    });
+  }
+
+  if (camion.fecha_fin_auditoria) {
+    eventos.push({
+      tipo: 'CIERRE_INICIAL',
+      titulo: isParcial ? 'Fin descarga (Parcial)' : 'Fin descarga (Total)',
+      fecha: camion.fecha_fin_auditoria,
+      usuario: camion.usuario_fin_auditoria,
+      esParcial: isParcial
+    });
+  }
+
+  if (camion.fecha_reapertura) {
+    eventos.push({
+      tipo: 'REAPERTURA',
+      titulo: 'Reapertura',
+      fecha: camion.fecha_reapertura,
+      usuario: camion.usuario_reapertura
+    });
+  }
+
+  if (camion.fecha_fin_reapertura) {
+    eventos.push({
+      tipo: 'CIERRE_REAPERTURA',
+      titulo: isParcial ? 'Cierre Reapertura (Parcial)' : 'Cierre Reapertura (Total)',
+      fecha: camion.fecha_fin_reapertura,
+      usuario: camion.usuario_cierre_reapertura,
+      esParcial: isParcial
+    });
+  }
+
+  return eventos.sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+};
+
 
 /**
  * Consulta la tabla auditoria_logs para verificar si el último evento de cierre

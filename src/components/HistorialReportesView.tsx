@@ -26,11 +26,13 @@ import {
   reabrirCamionNae, 
   formatDateTimeArg,
   fetchTrazabilidadCamion,
+  obtenerEventosTrazabilidadOrdenados,
   EventoTrazabilidad,
   calcularResumenAuditoria,
   fetchMaxLogDateForTruck,
   enriquecerCamionesConLogsParciales
 } from '../services/reportService';
+
 import { eliminarCamionEnCascada, descargarExcelHistorial } from '../services/historyService';
 import { BottomNavCapsule } from './BottomNavCapsule';
 import { ConfirmModal } from './ConfirmModal';
@@ -336,42 +338,17 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                         <span className="text-[10px] font-['Chakra_Petch'] font-bold text-sky-300 uppercase tracking-widest border-b border-sky-500/10 pb-1">
                           Trazabilidad Cronológica de Auditoría
                         </span>
-                        {trazabilidadMap[cam.id] && trazabilidadMap[cam.id].length > 0 ? (
-                          trazabilidadMap[cam.id].map((evt, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-[11px]">
-                              <span className={evt.tipo.includes('REAPERTURA') ? "text-amber-300 font-semibold" : evt.tipo.includes('CIERRE') ? "text-purple-300 font-medium" : "text-sky-200"}>
-                                • {evt.titulo}
-                              </span>
-                              <span className="text-slate-400 font-mono">
-                                {formatDateTimeArg(evt.fecha)}{evt.usuario ? ` • ${evt.usuario}` : ''}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex flex-col space-y-0.5 leading-tight">
-                            <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
-                            {cam.fecha_inicio_auditoria && (
-                              <span className="text-sky-300 font-semibold">
-                                Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
-                              </span>
-                            )}
-                            {cam.fecha_fin_auditoria && (
-                              <span>
-                                Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
-                              </span>
-                            )}
-                            {cam.fecha_reapertura && (
-                              <span className="text-amber-300 font-semibold">
-                                Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
-                              </span>
-                            )}
-                            {cam.fecha_fin_reapertura && (
-                              <span className="text-purple-300 font-semibold">
-                                Cierre Reapertura: {formatDateTimeArg(cam.fecha_fin_reapertura)}{cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}
-                              </span>
-                            )}
+                        {obtenerEventosTrazabilidadOrdenados(cam, trazabilidadMap[cam.id]).map((evt, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-[11px]">
+                            <span className={evt.tipo.includes('REAPERTURA') ? "text-amber-300 font-semibold" : evt.tipo.includes('CIERRE') ? "text-purple-300 font-medium" : "text-sky-200"}>
+                              • {evt.titulo}
+                            </span>
+                            <span className="text-slate-400 font-mono">
+                              {formatDateTimeArg(evt.fecha)}{evt.usuario ? ` • ${evt.usuario}` : ''}
+                            </span>
                           </div>
-                        )}
+                        ))}
+
                       </div>
                     </div>
                   )}

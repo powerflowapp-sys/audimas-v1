@@ -39,6 +39,8 @@ import { ModalIngresoSobrante } from './ModalIngresoSobrante';
 import { CollaboratorProfileModal } from './CollaboratorProfileModal';
 import { BottomNavCapsule } from './BottomNavCapsule';
 import { ModalModalidadAuditoria } from './ModalModalidadAuditoria';
+import { ModalValidacionUPC } from './ModalValidacionUPC';
+import { ModalRegistroProductoDesconocido } from './ModalRegistroProductoDesconocido';
 import { AuditoriaItem, CamionNAE, isItemInAuditScope } from '../types';
 
 const IconPesableBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
@@ -148,8 +150,16 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [sobranteUpc, setSobranteUpc] = useState<string>('');
   const [sobranteDescripcion, setSobranteDescripcion] = useState<string>('');
 
+  // Estados para Doble Validación de UPC y Registro de Productos Sin Catalogar (2 Fotos Obligatorias)
+  const [isModalValidacionOpen, setIsModalValidacionOpen] = useState<boolean>(false);
+  const [barcodeToValidate, setBarcodeToValidate] = useState<string>('');
+
+  const [isModalDesconocidoOpen, setIsModalDesconocidoOpen] = useState<boolean>(false);
+  const [desconocidoUpc, setDesconocidoUpc] = useState<string>('');
+
   // Modal para configuración de modalidad de auditoría (TOTAL, MONTO, UNIDADES, MIXTO)
   const [isModalidadModalOpen, setIsModalidadModalOpen] = useState<boolean>(false);
+
 
   // Referencias para autofoco permanente
   const inputScanRef = useRef<HTMLInputElement>(null);
@@ -703,7 +713,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     }
   };
 
-  // Manejador del Escaneo Inicial con Coincidencia Elástica
+  // Manejador del Escaneo Inicial con Coincidencia Elástica y Doble Validación
   const handleExecuteScan = async (upcToScan: string) => {
     const cleanUpc = sanitizeBarcode(upcToScan);
     if (!cleanUpc || isScanning) return;
@@ -711,7 +721,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     // Buscar si el producto ya está en la lista de auditoría del camión (coincidencia elástica de UPC / EAN / SKU)
     const itemEnCamion = items.find(it => matchBarcode(cleanUpc, it.upc) || matchBarcode(cleanUpc, it.sku));
 
-    // Si el producto pertenece al camión pero está fuera de la muestra de la modalidad
     if (itemEnCamion) {
       const inScope = isItemInAuditScope(
         itemEnCamion,
@@ -728,14 +737,119 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           timestamp: new Date()
         });
       }
+
+      setScanInput('');
+      setSobranteUpc(itemEnCamion.upc);
+      setSobranteDescripcion(itemEnCamion.descripcion);
+      setIsSobranteModalOpen(true);
+      return;
     }
 
-    // Abrir SIEMPRE el modal táctil de auditoría/ingreso
+    // SI NO PERTENECE AL CAMIÓN: Abrir Doble Validación de UPC (Paso 1)
     setScanInput('');
-    setSobranteUpc(itemEnCamion ? itemEnCamion.upc : cleanUpc);
-    setSobranteDescripcion(itemEnCamion ? itemEnCamion.descripcion : '');
+    setBarcodeToValidate(cleanUpc);
+    setIsModalValidacionOpen(true);
+  };
+
+  // Callback de Doble Validación cuando el código se encuentra en camión o en maestro V8
+  const handleFoundInCatalogFromValidation = (foundItemOrProduct: any, verifiedUpc: string) => {
+    setIsModalValidacionOpen(false);
+    
+    // Si fue hallado en el camión
+    if (foundItemOrProduct.nae_id || foundItemOrProduct.bultos_esperados !== undefined) {
+      setSobranteUpc(foundItemOrProduct.upc);
+      setSobranteDescripcion(foundItemOrProduct.descripcion);
+      setIsSobranteModalOpen(true);
+      return;
+    }
+
+    // Si fue hallado en maestro_productos V8
+    const descripcionV8 = foundItemOrProduct.descripcion || foundItemOrProduct.nombre || '';
+    setSobranteUpc(verifiedUpc);
+    setSobranteDescripcion(descripcionV8 ? `[V8] ${descripcionV8}` : '');
     setIsSobranteModalOpen(true);
   };
+
+  // Callback de Doble Validación cuando NO se encuentra en ningún catálogo -> Abrir Registro Desconocido (Paso 2)
+  const handleNotFoundInCatalogFromValidation = (verifiedUpc: string) => {
+    setIsModalValidacionOpen(false);
+    setDesconocidoUpc(verifiedUpc);
+    setIsModalDesconocidoOpen(true);
+  };
+
+  // Confirmación de Registro de Producto Desconocido con 2 Fotos Obligatorias
+  const handleConfirmDesconocido = async (data: {
+    upc: string;
+    cantidad: number;
+    fotoUpcUrl: string;
+    fotoFrenteUrl: string;
+  }) => {
+    setIsModalDesconocidoOpen(false);
+    setIsScanning(true);
+
+    try {
+      // 1. Ejecutar RPC registrar_escaneo para crear el registro básico
+      const { error: rpcErr } = await supabase.rpc('registrar_escaneo', {
+        p_nae_id: naeId,
+        p_upc: data.upc,
+        p_modo: 'UNIDADES',
+        p_cantidad: data.cantidad,
+        p_colaborador: collaborator,
+        p_caja_separada: false
+      });
+
+      if (rpcErr) {
+        throw new Error(rpcErr.message);
+      }
+
+      // 2. Forzar actualización con descripción fija, depto 999 DESCONOCIDO y 2 fotos obligatorias
+      const descripcionDesconocido = '⚠️ NO HALLADO EN BASE DE DATOS (SIN DATOS)';
+      await supabase
+        .from('auditoria_items')
+        .update({
+          descripcion: descripcionDesconocido,
+          depto_codigo: '999',
+          depto_nombre: 'DESCONOCIDO',
+          costo_unitario: 0,
+          costo_unitario_aplicado: 0,
+          es_sobrante_no_facturado: true,
+          foto_upc_url: data.fotoUpcUrl,
+          foto_frente_url: data.fotoFrenteUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('nae_id', naeId)
+        .eq('upc', data.upc);
+
+      // 3. Recargar ítems de auditoría
+      await refreshItems();
+
+
+      const scanType: ScanFeedbackType = 'DESCONOCIDO';
+      feedbackService.trigger(scanType);
+
+      setLastScan({
+        type: scanType,
+        title: '⚠️ CÓDIGO FUERA DE CATÁLOGO REGISTRADO',
+        subtitle: `Registrado como Sobrante No Facturado (${data.cantidad} un) con 2 fotos adjuntas.`,
+        upc: data.upc,
+        modo: 'UNIDADES',
+        cantidad: data.cantidad,
+        timestamp: Date.now()
+      });
+    } catch (err: any) {
+      console.error('Error al guardar producto desconocido con fotos:', err);
+      feedbackService.trigger('ERROR');
+      setLastScan({
+        type: 'ERROR',
+        title: '❌ ERROR AL REGISTRAR PRODUCTO DESCONOCIDO',
+        subtitle: err.message || 'No se pudo completar el registro con fotos.',
+        timestamp: Date.now()
+      });
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
 
   // Confirmar registro desde el Modal de Auditoría / Ingreso
   const handleConfirmSobrante = async (
@@ -1279,7 +1393,33 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       <span className="text-slate-500 font-normal">•</span>
                       <span>UPC: {item.upc}</span>
                     </div>
+
+                    {(item.foto_upc_url || item.foto_frente_url) && (
+                      <div className="flex items-center gap-2 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                        {item.foto_upc_url && (
+                          <a
+                            href={item.foto_upc_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-amber-500/30 transition-colors"
+                          >
+                            <span>📷 Foto UPC</span>
+                          </a>
+                        )}
+                        {item.foto_frente_url && (
+                          <a
+                            href={item.foto_frente_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-sky-500/30 transition-colors"
+                          >
+                            <span>📷 Foto Frente</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
+
 
                   {/* Fila 3: Balance Unificado de Avance y Conteo Auditado Consolidado */}
                   <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
@@ -1439,6 +1579,28 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           setIsModalidadModalOpen(false);
         }}
       />
+
+      {/* MODAL DE DOBLE VALIDACIÓN DE UPC (PASO 1) */}
+      <ModalValidacionUPC
+        isOpen={isModalValidacionOpen}
+        onClose={() => setIsModalValidacionOpen(false)}
+        naeId={naeId}
+        scannedBarcode={barcodeToValidate}
+        itemsInTruck={items}
+        onFoundInCatalog={handleFoundInCatalogFromValidation}
+        onNotFoundInCatalog={handleNotFoundInCatalogFromValidation}
+      />
+
+      {/* MODAL DE REGISTRO DE PRODUCTO DESCONOCIDO CON 2 FOTOS OBLIGATORIAS (PASO 2) */}
+      {isModalDesconocidoOpen && (
+        <ModalRegistroProductoDesconocido
+          upc={desconocidoUpc}
+          naeId={naeId}
+          onConfirm={handleConfirmDesconocido}
+          onCancel={() => setIsModalDesconocidoOpen(false)}
+        />
+      )}
     </div>
   );
 };
+

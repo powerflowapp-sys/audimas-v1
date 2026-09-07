@@ -866,8 +866,43 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                         )}
                       </div>
                     )}
+
+                    {(item.foto_upc_url || item.foto_frente_url) && (
+                      <div className="mt-2 p-2.5 bg-amber-950/40 border border-amber-500/40 rounded-xl space-y-1 text-xs">
+                        <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                          <span>📷 Evidencia Producto Sin Catalogar:</span>
+                        </span>
+                        <div className="flex items-center gap-2 pt-1">
+                          {item.foto_upc_url && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPhotoUrl(item.foto_upc_url!);
+                              }}
+                              className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30 transition-colors"
+                            >
+                              <span>📷 Foto UPC</span>
+                            </button>
+                          )}
+                          {item.foto_frente_url && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedPhotoUrl(item.foto_frente_url!);
+                              }}
+                              className="px-2.5 py-1 bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-sky-500/30 transition-colors"
+                            >
+                              <span>📷 Foto Frente</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
+
               })
             )}
           </div>

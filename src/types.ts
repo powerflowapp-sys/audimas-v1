@@ -113,6 +113,8 @@ export interface AuditoriaItem {
   observacion_dano?: string;
   foto_dano_url?: string;
   fotos_dano_urls?: string[];
+  foto_upc_url?: string;
+  foto_frente_url?: string;
   updated_at?: string;
 }
 

@@ -184,5 +184,66 @@ export const uploadFotoDano = async (
   }
 };
 
+/**
+ * Sube foto obligatoria de producto desconocido (código de barras / etiqueta o frente de producto)
+ */
+export const uploadFotoDesconocido = async (
+  file: File,
+  naeId: string,
+  upc: string,
+  tipo: 'upc' | 'frente'
+): Promise<string> => {
+  try {
+    const compressedBlob = await compressImage(file);
+    const fileName = `desconocidos/${naeId}/${upc.trim()}_${tipo}_${Date.now()}_${Math.floor(Math.random() * 1000)}.webp`;
+    const contentType = compressedBlob.type || 'image/webp';
+
+    // 1. Intentar subida a bucket 'auditoria-fotos'
+    const { data: data1, error: error1 } = await supabase.storage
+      .from('auditoria-fotos')
+      .upload(fileName, compressedBlob, {
+        contentType,
+        upsert: true
+      });
+
+    if (!error1 && data1) {
+      const { data: publicUrlData1 } = supabase.storage
+        .from('auditoria-fotos')
+        .getPublicUrl(fileName);
+      if (publicUrlData1?.publicUrl) return publicUrlData1.publicUrl;
+    }
+
+    // 2. Intentar subida a bucket 'evidencias-danos'
+    const { data: data0, error: error0 } = await supabase.storage
+      .from('evidencias-danos')
+      .upload(fileName, compressedBlob, {
+        contentType,
+        upsert: true
+      });
+
+    if (!error0 && data0) {
+      const { data: publicUrlData0 } = supabase.storage
+        .from('evidencias-danos')
+        .getPublicUrl(fileName);
+      if (publicUrlData0?.publicUrl) return publicUrlData0.publicUrl;
+    }
+
+    // 3. Fallback a Data URL
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(compressedBlob);
+    });
+  } catch (e) {
+    console.warn('⚠️ Advertencia al comprimir/subir foto de desconocido:', e);
+    return new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+  }
+};
+
 export { purgeCamionPhotos } from '../services/storageService';
+
 

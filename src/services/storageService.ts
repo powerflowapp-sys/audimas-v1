@@ -30,14 +30,18 @@ export const purgeCamionPhotos = async (camionId: string | number): Promise<Purg
     try {
       const { data: items } = await supabase
         .from('auditoria_items')
-        .select('foto_dano_url')
+        .select('foto_dano_url, foto_upc_url, foto_frente_url')
         .eq('nae_id', strId);
 
       if (items && items.length > 0) {
-        dbPhotoUrls = items.flatMap(it => parseFotoUrls(it.foto_dano_url));
+        dbPhotoUrls = items.flatMap(it => [
+          ...parseFotoUrls(it.foto_dano_url),
+          ...parseFotoUrls(it.foto_upc_url),
+          ...parseFotoUrls(it.foto_frente_url),
+        ]);
       }
     } catch (e) {
-      console.warn(`[purgeCamionPhotos] No se pudieron obtener foto_dano_url de auditoria_items para NAE ${strId}:`, e);
+      console.warn(`[purgeCamionPhotos] No se pudieron obtener URLs de fotos de auditoria_items para NAE ${strId}:`, e);
     }
 
     for (const bucket of buckets) {
@@ -59,6 +63,24 @@ export const purgeCamionPhotos = async (camionId: string | number): Promise<Purg
       } catch (err) {
         console.warn(`[purgeCamionPhotos] Error al listar 'danos/${strId}' en bucket '${bucket}':`, err);
       }
+
+      // 2b. Listar archivos en la carpeta 'desconocidos/${strId}'
+      try {
+        const { data: listDesc, error: errDesc } = await supabase.storage
+          .from(bucket)
+          .list(`desconocidos/${strId}`, { limit: 1000 });
+
+        if (!errDesc && listDesc && listDesc.length > 0) {
+          listDesc.forEach(file => {
+            if (file.name) {
+              filePathsToPurge.push(`desconocidos/${strId}/${file.name}`);
+            }
+          });
+        }
+      } catch (err) {
+        console.warn(`[purgeCamionPhotos] Error al listar 'desconocidos/${strId}' en bucket '${bucket}':`, err);
+      }
+
 
       // 3. Listar archivos en la carpeta '${strId}' directamente
       try {

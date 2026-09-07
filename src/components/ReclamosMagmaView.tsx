@@ -71,7 +71,24 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
 
   useEffect(() => {
     loadReclamos();
+
+    // Suscripción en tiempo real a la tabla reclamos_magma en Supabase
+    const channel = supabase
+      .channel('realtime_reclamos_magma_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reclamos_magma' },
+        () => {
+          loadReclamos();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [camiones]);
+
 
   if (isMobileScreen && !forzarVistaMobile) {
     return (

@@ -4,31 +4,6 @@ import { AuditoriaItem, CamionNAE, ReclamoMagma, EstadoReclamoMagma, isCamionCie
 import { getItemCostoReferencial, getUomLabel, calcularUnidadesFisicasItem } from '../utils/formatUtils';
 import { evaluarDiscrepanciasCamion, enriquecerCamionesConLogsParciales } from './reportService';
 
-const LOCAL_RECLAMOS_KEY = 'audimas_reclamos_magma_cache';
-
-/**
- * Obtiene reclamos cacheados localmente en localStorage (fallback resiliente)
- */
-const getLocalReclamosMap = (): Record<string, ReclamoMagma> => {
-  try {
-    const raw = localStorage.getItem(LOCAL_RECLAMOS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-};
-
-/**
- * Guarda reclamos en localStorage
- */
-const saveLocalReclamosMap = (map: Record<string, ReclamoMagma>) => {
-  try {
-    localStorage.setItem(LOCAL_RECLAMOS_KEY, JSON.stringify(map));
-  } catch (e) {
-    console.warn('⚠️ Error guardando caché local de reclamos:', e);
-  }
-};
-
 /**
  * Orden jerárquico de categorías de desvío para Magma
  */
@@ -98,7 +73,7 @@ export const rescatarCostosDesdeMaestroV8 = async (
       }
     });
 
-    // Actualizar asincrónicamente en Supabase auditoria_items para persisitir los costos rescatados
+    // Actualizar asincrónicamente en Supabase auditoria_items para persistir los costos rescatados
     if (itemsToPersist.length > 0) {
       Promise.all(
         itemsToPersist.map(itemUpdate =>
@@ -248,15 +223,14 @@ export const calcularDiscrepanciasReclamo = (
 };
 
 /**
- * Consulta la lista completa de Reclamos Magma desde Supabase y sincroniza con camiones cerrados.
+ * Consulta la lista completa de Reclamos Magma desde Supabase como ÚNICA FUENTE DE VERDAD.
+ * Sincroniza y persiste automáticamente los desvíos de camiones cerrados.
  */
 export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<ReclamoMagma[]> => {
-  const localMap = getLocalReclamosMap();
-
   // Cruce preventivo con auditoria_logs para detectar si el último cierre fue PARCIAL
   const camionesEnriquecidos = await enriquecerCamionesConLogsParciales(camiones);
 
-  // 1. Consultar tabla reclamos_magma en Supabase
+  // 1. Consultar la tabla reclamos_magma en Supabase
   let dbReclamos: ReclamoMagma[] = [];
   try {
     const { data, error } = await supabase
@@ -268,7 +242,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       dbReclamos = data as ReclamoMagma[];
     }
   } catch (err) {
-    console.warn('⚠️ Nota: No se pudo consultar la tabla reclamos_magma en Supabase, utilizando caché local:', err);
+    console.warn('⚠️ Error al consultar la tabla reclamos_magma en Supabase:', err);
   }
 
   // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
@@ -278,16 +252,12 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
   });
 
   const resultReclamos: ReclamoMagma[] = [];
-  const updatedLocalMap = { ...localMap };
 
   for (const camion of camionesCerrados) {
     const esParcial = isCamionCierreParcial(camion);
 
-    // Buscar reclamo existente por nae_id O por nae_numero
+    // Buscar reclamo existente en la base de datos de Supabase por nae_id O por nae_numero
     let reclamo = dbReclamos.find(r => 
-      (r.nae_id && r.nae_id === camion.id) || 
-      (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
-    ) || Object.values(localMap).find(r => 
       (r.nae_id && r.nae_id === camion.id) || 
       (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
     );
@@ -302,7 +272,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       itemsList = await rescatarCostosDesdeMaestroV8(itemsList);
       const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
 
-      // Si el camión es 100% conforme (o en parcial no tiene desvíos sobre lo auditado), OMITIR reclamo Magma
+      // Si el camión es 100% conforme, OMITIR reclamo Magma y purgar de Supabase si existía previamente
       if (discEval.es100Conforme) {
         if (reclamo) {
           try {
@@ -312,30 +282,19 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
               await supabase.from('reclamos_magma').delete().eq('nae_numero', camion.numero_nae.trim());
             }
           } catch (e) {}
-          delete updatedLocalMap[reclamo.id];
-          delete updatedLocalMap[`rec_${camion.id}`];
-          if (camion.numero_nae) {
-            Object.keys(updatedLocalMap).forEach(k => {
-              if (updatedLocalMap[k]?.nae_numero === camion.numero_nae.trim()) {
-                delete updatedLocalMap[k];
-              }
-            });
-          }
         }
         continue;
       }
 
       const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
 
-      // Si de lo auditado no resultan discrepancias monetarias ni de SKUs, asegurar borrado
-      if (disc.cantSkusAfectados === 0 && disc.totalMontoReclamado === 0) {
+      // Si de lo auditado no resultan discrepancias y NO fue personalizado manualmente, asegurar borrado
+      if (disc.cantSkusAfectados === 0 && disc.totalMontoReclamado === 0 && !reclamo?.seleccion_manual) {
         if (reclamo) {
           try {
             await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
             await supabase.from('reclamos_magma').delete().eq('nae_id', camion.id);
           } catch (e) {}
-          delete updatedLocalMap[reclamo.id];
-          delete updatedLocalMap[`rec_${camion.id}`];
         }
         continue;
       }
@@ -343,7 +302,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       const fechaCierre = camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
 
       if (reclamo) {
-        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO: Preservar montos y selección
+        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO: Preservar montos y selección exactos
         if (reclamo.seleccion_manual) {
           reclamo = {
             ...reclamo,
@@ -352,7 +311,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
             updated_at: new Date().toISOString()
           };
         } else {
-          // Si no es manual, recalcular automáticamente con la auditoría
+          // Si no es manual, recalcular automáticamente con los datos de la auditoría
           reclamo = {
             ...reclamo,
             fecha_cierre_auditoria: fechaCierre,
@@ -369,11 +328,10 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           await supabase.from('reclamos_magma').upsert([reclamo], { onConflict: 'id' });
         } catch (e) {}
         resultReclamos.push(reclamo);
-        updatedLocalMap[reclamo.id] = reclamo;
         continue;
       }
 
-      // Si no existía reclamo registrado y tiene desvíos (cantFaltantes > 0 || cantSobrantes > 0 || cantDaniados > 0 || cantSinContar > 0)
+      // Si no existía reclamo registrado y tiene desvíos, crear el registro inicial en Supabase
       if (disc.cantSkusAfectados > 0 || disc.totalMontoReclamado > 0) {
         const newReclamo: ReclamoMagma = {
           id: `rec_${camion.id}`,
@@ -393,22 +351,18 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           updated_at: new Date().toISOString()
         };
 
-
         try {
           await supabase.from('reclamos_magma').upsert([newReclamo], { onConflict: 'id' });
         } catch (e) {
-          console.warn('⚠️ No se pudo guardar el nuevo reclamo en Supabase (usando local storage):', e);
+          console.warn('⚠️ Error guardando nuevo reclamo inicial en Supabase:', e);
         }
 
         resultReclamos.push(newReclamo);
-        updatedLocalMap[newReclamo.id] = newReclamo;
       }
     } catch (err) {
       console.warn(`Error al verificar items para reclamo del camión NAE ${camion.numero_nae}:`, err);
     }
   }
-
-  saveLocalReclamosMap(updatedLocalMap);
 
   return resultReclamos.sort((a, b) => {
     const dateA = a.fecha_cierre_auditoria ? new Date(a.fecha_cierre_auditoria).getTime() : 0;
@@ -418,14 +372,25 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
 };
 
 /**
- * Actualiza un reclamo existente (Estado, Ticket Magma, Monto Liquidado, Timestamps)
+ * Actualiza un reclamo existente directamente en la base de datos de Supabase (sin usar localStorage).
  */
 export const updateReclamoMagma = async (
   reclamoId: string, 
   updates: Partial<ReclamoMagma>
 ): Promise<ReclamoMagma> => {
-  const localMap = getLocalReclamosMap();
-  const current = localMap[reclamoId] || {};
+  // 1. Obtener el estado actual del reclamo desde Supabase si existe
+  let current: Partial<ReclamoMagma> = {};
+  try {
+    const { data } = await supabase
+      .from('reclamos_magma')
+      .select('*')
+      .eq('id', reclamoId)
+      .maybeSingle();
+
+    if (data) {
+      current = data as ReclamoMagma;
+    }
+  } catch (e) {}
 
   const updated: ReclamoMagma = {
     ...current,
@@ -434,18 +399,14 @@ export const updateReclamoMagma = async (
     updated_at: new Date().toISOString()
   } as ReclamoMagma;
 
-  // Actualizar en localStorage
-  localMap[reclamoId] = updated;
-  saveLocalReclamosMap(localMap);
-
-  // Intentar actualizar en Supabase
+  // 2. Persistir directamente en la tabla reclamos_magma de Supabase
   try {
     const { error } = await supabase
       .from('reclamos_magma')
       .upsert([updated], { onConflict: 'id' });
 
     if (error) {
-      console.warn('⚠️ Advertencia al guardar reclamo en Supabase:', error.message);
+      console.warn('⚠️ Error al actualizar reclamo en Supabase:', error.message);
     }
   } catch (err) {
     console.warn('⚠️ No se pudo conectar a Supabase para actualizar el reclamo:', err);
@@ -639,7 +600,6 @@ export const exportarPlanillaReclamoMagmaExcel = async (
         cell.numFmt = '"$"#,##0.00';
         cell.alignment = { vertical: 'middle', horizontal: 'right' };
       } else if (colNum === 6) {
-        // MÁSCARA EXPLICITA DE 3 DECIMALES PARA PESABLES / CANTIDAD AFECTADA
         cell.numFmt = '#,##0.000';
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       } else {

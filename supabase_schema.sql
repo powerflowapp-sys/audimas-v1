@@ -42,6 +42,18 @@ CREATE TABLE IF NOT EXISTS camiones_nae (
 -- Asegurar columnas y restricciones si la tabla ya existía previamente
 ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS fecha_inicio_auditoria TIMESTAMP WITH TIME ZONE;
 ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS fecha_fin_auditoria TIMESTAMP WITH TIME ZONE;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS fecha_reapertura TIMESTAMP WITH TIME ZONE;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS fecha_fin_reapertura TIMESTAMP WITH TIME ZONE;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS fecha_fin TIMESTAMP WITH TIME ZONE;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS tiene_reporte_ap BOOLEAN DEFAULT FALSE;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS monto_total_esperado NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS modo_auditoria VARCHAR(20) DEFAULT 'TOTAL';
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS meta_monto NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS meta_unidades NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS meta_porcentaje NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS umbral_unidades NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS umbral_monto NUMERIC DEFAULT 0;
+ALTER TABLE camiones_nae ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE camiones_nae ALTER COLUMN estado SET DEFAULT 'PENDIENTE';
 ALTER TABLE camiones_nae DROP CONSTRAINT IF EXISTS camiones_nae_estado_check;
 ALTER TABLE camiones_nae ADD CONSTRAINT camiones_nae_estado_check CHECK (estado IN ('PENDIENTE', 'EN_PROCESO', 'FINALIZADO', 'CERRADO'));
@@ -70,10 +82,17 @@ CREATE TABLE IF NOT EXISTS auditoria_items (
     unidades_escaneadas NUMERIC DEFAULT 0,
     es_sobrante_no_facturado BOOLEAN DEFAULT FALSE,
     caja_separada_transito BOOLEAN DEFAULT FALSE,
-    ultimo_colaborador VARCHAR(100),
+    cantidad_danada NUMERIC DEFAULT 0,
+    observacion_dano TEXT DEFAULT '',
+    foto_dano_url TEXT DEFAULT '',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT uq_auditoria_items_nae_upc UNIQUE (nae_id, upc)
 );
+
+-- Asegurar columnas si auditoria_items ya existía
+ALTER TABLE auditoria_items ADD COLUMN IF NOT EXISTS cantidad_danada NUMERIC DEFAULT 0;
+ALTER TABLE auditoria_items ADD COLUMN IF NOT EXISTS observacion_dano TEXT DEFAULT '';
+ALTER TABLE auditoria_items ADD COLUMN IF NOT EXISTS foto_dano_url TEXT DEFAULT '';
 
 -- Índices de optimización para auditoria_items
 CREATE INDEX IF NOT EXISTS idx_auditoria_items_nae_id ON auditoria_items(nae_id);
@@ -455,3 +474,90 @@ CREATE POLICY "Permitir actualizacion publica colaboradores_activos"
     USING (true);
 
 GRANT ALL ON TABLE colaboradores_activos TO anon, authenticated, service_role;
+
+-- =============================================================================
+-- 9. TABLAS DE AUTENTICACIÓN NATIVA, CONFIGURACIÓN Y SUPERADMIN
+-- =============================================================================
+
+-- Tabla app_settings (Clave Maestra SuperAdmin y configuraciones globales)
+CREATE TABLE IF NOT EXISTS app_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Seed de Clave Maestra inicial ("Jujuy1031")
+INSERT INTO app_settings (key, value, description)
+VALUES ('superadmin_master_key', 'Jujuy1031', 'Clave Maestra de Acceso SuperAdmin AudiMAS')
+ON CONFLICT (key) DO NOTHING;
+
+-- Tabla tiendas (Gestión dinámica de sucursales)
+CREATE TABLE IF NOT EXISTS tiendas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    codigo VARCHAR(50) NOT NULL UNIQUE,
+    nombre VARCHAR(150) NOT NULL,
+    activa BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Seed inicial de Tiendas
+INSERT INTO tiendas (codigo, nombre, activa) VALUES
+('1031', '1031 - Tienda Jujuy', TRUE)
+ON CONFLICT (codigo) DO NOTHING;
+
+-- Tabla sectores (Gestión dinámica de sectores/departamentos)
+CREATE TABLE IF NOT EXISTS sectores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nombre VARCHAR(150) NOT NULL UNIQUE,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Seed inicial de Sectores
+INSERT INTO sectores (nombre, activo) VALUES
+('Operaciones Back', TRUE),
+('Perecederos', TRUE),
+('Piso de Venta', TRUE),
+('Calidad', TRUE),
+('Gerencia', TRUE)
+ON CONFLICT (nombre) DO NOTHING;
+
+-- Tabla profiles (Perfiles extendidos de colaboradores)
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    nombre_apellido TEXT NOT NULL,
+    telefono TEXT,
+    tienda_id TEXT,
+    tienda_codigo TEXT,
+    tienda_nombre TEXT,
+    sector_id TEXT,
+    sector_nombre TEXT,
+    estado VARCHAR(30) DEFAULT 'pendiente_aprobacion' CHECK (estado IN ('pendiente_aprobacion', 'activo', 'suspendido')),
+    origen VARCHAR(20) DEFAULT 'Nativo',
+    requiere_onboarding BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS origen VARCHAR(20) DEFAULT 'Nativo';
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS telefono TEXT;
+
+-- Habilitar RLS y políticas
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tiendas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sectores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Acceso total app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acceso total tiendas" ON tiendas FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acceso total sectores" ON sectores FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acceso total profiles" ON profiles FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON TABLE app_settings TO anon, authenticated, service_role;
+GRANT ALL ON TABLE tiendas TO anon, authenticated, service_role;
+GRANT ALL ON TABLE sectores TO anon, authenticated, service_role;
+GRANT ALL ON TABLE profiles TO anon, authenticated, service_role;
+
+

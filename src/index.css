@@ -4,14 +4,30 @@
 
 @layer base {
   body {
-    @apply bg-gradient-to-br from-[#001f7a] via-[#001040] to-[#00081d] text-slate-100 antialiased font-sans min-h-screen;
+    @apply bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-slate-100 antialiased font-sans min-h-screen;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Ocultar barra de scroll globalmente manteniendo funcionalidad de desplazamiento */
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0px;
+    height: 0px;
+    background: transparent;
   }
 }
 
-/* Ocultar barra de scroll en navegadores */
+/* Ocultar barra de scroll en utilidades */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+  width: 0px;
+  height: 0px;
+  background: transparent;
 }
 .no-scrollbar {
   -ms-overflow-style: none;

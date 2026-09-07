@@ -1,0 +1,23 @@
+{
+  "name": "OperaMAS - Suite Retail",
+  "short_name": "OperaMAS",
+  "description": "Suite de Operaciones y Auditoría Retail (AudiMAS, BandeMAS)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png?v=2",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png?v=2",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

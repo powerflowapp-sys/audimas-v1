@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { History, X, Clock, User, Package, Layers, RefreshCw } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { AuditoriaItem, AuditoriaLog } from '../types';
+import { getBarcodeVariants } from '../utils/barcodeUtils';
+import { getUomLabel, getScanLogUomLabel } from '../utils/formatUtils';
 
 interface ModalHistorialItemProps {
   isOpen: boolean;
@@ -23,6 +25,13 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
   useEffect(() => {
     if (!isOpen || !item || !naeId) return;
 
+    const targetUpc = (item.upc || '').trim();
+    const targetSku = (item.sku || '').trim();
+    const searchCodes = Array.from(new Set([
+      ...getBarcodeVariants(targetUpc),
+      ...getBarcodeVariants(targetSku)
+    ])).filter(Boolean);
+
     const fetchLogs = async () => {
       setLoading(true);
       setError(null);
@@ -31,7 +40,7 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
           .from('auditoria_logs')
           .select('*')
           .eq('nae_id', naeId)
-          .eq('upc', item.upc)
+          .in('upc', searchCodes)
           .order('created_at', { ascending: false });
 
         if (fetchErr) {
@@ -48,24 +57,44 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
     };
 
     fetchLogs();
+
+    const channelName = `realtime-item-logs-${naeId}-${targetUpc || targetSku}-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'auditoria_logs',
+          filter: `nae_id=eq.${naeId}`
+        },
+        () => {
+          fetchLogs();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isOpen, item, naeId]);
 
   if (!isOpen || !item) return null;
 
-  // Formato legible de fecha y hora (HH:mm:ss - DD/MM)
   const formatTimestamp = (dateStr?: string) => {
     if (!dateStr) return '--:--:--';
     try {
       const d = new Date(dateStr);
-      const timeStr = d.toLocaleTimeString('es-AR', {
+      return new Intl.DateTimeFormat('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        day: '2-digit',
+        month: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
         hour12: false
-      });
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      return `${timeStr} - ${day}/${month}`;
+      }).format(d);
     } catch {
       return dateStr;
     }
@@ -155,7 +184,7 @@ export const ModalHistorialItem: React.FC<ModalHistorialItemProps> = ({
               const esResta = log.cantidad < 0;
               const cantAbs = Math.abs(log.cantidad);
               const textoCantidad = esResta ? `-${cantAbs}` : `+${log.cantidad}`;
-              const modoText = log.modo_conteo === 'BULTOS' ? 'Bulto(s)' : 'Unidad(es)';
+              const modoText = getScanLogUomLabel(log.modo_conteo, log.cantidad, item.unidad_medida);
 
               return (
                 <div 

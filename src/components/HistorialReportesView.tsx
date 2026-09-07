@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, 
-  ArrowLeft, 
   Search, 
   Building2, 
   Clock, 
   CheckCircle, 
   TrendingUp, 
   RefreshCw,
-  Download
+  Download,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { CamionNAE, AuditoriaItem } from '../types';
-import { descargarExcelHistorial, getSnapshotLocal } from '../services/historyService';
-import { calcularResumenAuditoria } from '../services/reportService';
+import { descargarExcelHistorial, eliminarCamionEnCascada } from '../services/historyService';
+import { calcularResumenAuditoria, reabrirCamionNae, formatDateTimeArg, fetchMaxLogDateForTruck } from '../services/reportService';
+import { purgeCamionPhotos } from '../services/storageService';
+import { parseFotoUrls } from '../utils/imageCompressor';
+import { ConfirmModal } from './ConfirmModal';
+import { BottomNavCapsule } from './BottomNavCapsule';
 
 interface HistorialReportesViewProps {
   onBack: () => void;
@@ -29,11 +36,30 @@ interface ReporteHistorialItem {
   isDownloading?: boolean;
 }
 
-export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ onBack }) => {
+export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ 
+  onBack
+}) => {
   const [reportes, setReportes] = useState<ReporteHistorialItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const [expandedTruckIds, setExpandedTruckIds] = useState<Record<string, boolean>>({});
+
+  const toggleTruckTimes = (truckId: string) => {
+    setExpandedTruckIds(prev => ({
+      ...prev,
+      [truckId]: !prev[truckId]
+    }));
+  };
+
+  // Estado para modal de confirmación de reapertura
+  const [truckToReopen, setTruckToReopen] = useState<CamionNAE | null>(null);
+  const [isReopening, setIsReopening] = useState<boolean>(false);
+
+  // Estado para modal de confirmación de eliminación definitiva y purga de imágenes
+  const [truckToDelete, setTruckToDelete] = useState<CamionNAE | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   useEffect(() => {
     cargarHistorial();
@@ -55,50 +81,39 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
 
       const camionesList: CamionNAE[] = camionesData || [];
 
-      // Para cada camión, cargar resumen rápido desde snapshot local o Supabase
+      // Para cada camión, calcular resumen en tiempo real desde Supabase (datos vivos)
       const reportesCalculados: ReporteHistorialItem[] = await Promise.all(
         camionesList.map(async (cam) => {
-          const snap = getSnapshotLocal(cam.id);
-          let uEsc = 0;
-          let uEsp = 0;
-          let totalSkus = 0;
-          let efectividad = 100;
-          let auditor = 'AUDITOR A';
-
-          if (snap && snap.items) {
-            const res = calcularResumenAuditoria(snap.items);
-            uEsc = res.unidadesEscaneadas;
-            uEsp = res.unidadesEsperadas;
-            totalSkus = res.totalSkus;
-            efectividad = res.efectividadPorcentaje;
-            if (snap.productividad && snap.productividad.length > 0) {
-              auditor = snap.productividad[0].colaborador_nombre;
-            }
-          } else {
-            // Consultar ítems directos en Supabase
-            const { data: items } = await supabase
-              .from('auditoria_items')
-              .select('unidades_esperadas, unidades_escaneadas, bultos_esperados, bultos_escaneados, ultimo_colaborador')
-              .eq('nae_id', cam.id);
-
-            const list: AuditoriaItem[] = (items as any) || [];
-            const res = calcularResumenAuditoria(list);
-            uEsc = res.unidadesEscaneadas;
-            uEsp = res.unidadesEsperadas;
-            totalSkus = res.totalSkus;
-            efectividad = res.efectividadPorcentaje;
-
-            const ultColab = list.find(it => it.ultimo_colaborador)?.ultimo_colaborador;
-            if (ultColab) auditor = ultColab;
+          let updatedCamion = cam;
+          if (!cam.fecha_fin_auditoria && !cam.fecha_fin) {
+            const maxLogDate = await fetchMaxLogDateForTruck(cam.id);
+            updatedCamion = {
+              ...cam,
+              fecha_fin_auditoria: maxLogDate || cam.created_at
+            };
           }
 
+          const { data: items } = await supabase
+            .from('auditoria_items')
+            .select('unidades_esperadas, unidades_escaneadas, bultos_esperados, bultos_escaneados, ultimo_colaborador, es_sobrante_no_facturado')
+            .eq('nae_id', cam.id);
+
+          const list: AuditoriaItem[] = (items as any) || [];
+          const res = calcularResumenAuditoria(list);
+          const uEsc = res.unidadesEscaneadas;
+          const uEsp = res.unidadesEsperadas;
+          const totalSkus = res.totalSkus;
+          const efectividad = res.efectividadPorcentaje;
+
+          const ultColab = list.find(it => it.ultimo_colaborador)?.ultimo_colaborador || 'AUDITOR';
+
           return {
-            camion: cam,
+            camion: updatedCamion,
             totalSkus,
             unidadesEscaneadas: uEsc,
             unidadesEsperadas: uEsp,
             efectividadPorcentaje: efectividad,
-            auditorResponsable: auditor
+            auditorResponsable: ultColab
           };
         })
       );
@@ -122,9 +137,57 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
     }
   };
 
-  const filteredReportes = reportes.filter((r) => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
+  const handleConfirmReopenReport = async () => {
+    if (!truckToReopen) return;
+    setIsReopening(true);
+    try {
+      const activeUser = (localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
+      await reabrirCamionNae(truckToReopen.id, activeUser);
+      setTruckToReopen(null);
+      await cargarHistorial();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al reabrir la auditoría');
+    } finally {
+      setIsReopening(false);
+    }
+  };
+
+  const handleConfirmDeleteReport = async () => {
+    if (!truckToDelete) return;
+    setIsDeleting(true);
+    const naeId = truckToDelete.id;
+
+    try {
+      await eliminarCamionEnCascada(naeId);
+      setTruckToDelete(null);
+      await cargarHistorial();
+    } catch (err) {
+      console.error('Error al purgar el reporte y evidencias:', err);
+      alert(err instanceof Error ? err.message : 'Error al eliminar el reporte');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const formatDateTime = (dateStr?: string): string => {
+    if (!dateStr) return '--/--/-- --:--';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '--/--/-- --:--';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} ${hours}:${minutes} hs`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const filteredReportes = reportes.filter(r => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
     return (
       r.camion.numero_nae.toLowerCase().includes(q) ||
       r.camion.tienda_nombre.toLowerCase().includes(q) ||
@@ -133,18 +196,11 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#001f7a] via-[#001040] to-[#00081d] text-white flex flex-col font-sans pb-10 select-none">
+    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-32 select-none">
       
       {/* Header Fijo Estilo GDS */}
       <header className="sticky top-0 z-40 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 p-3 flex items-center justify-between shadow-lg">
         <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-2 bg-[#0c2847] hover:bg-[#163a75] text-sky-300 rounded-xl border border-sky-500/30 transition-colors"
-            title="Volver a Dashboard"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
           <div>
             <h1 className="font-['Chakra_Petch'] font-black text-sm text-sky-300 uppercase tracking-wider flex items-center space-x-2">
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
@@ -195,15 +251,7 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
             {filteredReportes.map((item) => {
               const cam = item.camion;
               const isDownloading = downloadingId === cam.id;
-              const fechaCierreStr = cam.fecha_fin_auditoria
-                ? new Date(cam.fecha_fin_auditoria).toLocaleDateString('es-AR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  }) + ' hs'
-                : 'Finalizado';
+              const fechaCierreStr = formatDateTimeArg(cam.fecha_fin_auditoria || cam.fecha_fin || cam.created_at);
 
               return (
                 <div
@@ -233,6 +281,41 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
                     <span>{cam.tienda_codigo} - {cam.tienda_nombre}</span>
                   </div>
 
+                  {/* Cronología de Marcas de Tiempo en GMT-3 (Colapsable en Camiones Finalizados/Cerrados) */}
+                  {Boolean(expandedTruckIds[cam.id]) && (
+                    <div className="text-[10px] sm:text-[11px] text-slate-300 font-mono flex items-start space-x-2 p-2 bg-[#020b18]/60 border border-sky-500/10 rounded-xl animate-fade-in">
+                      <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" />
+                      <div className="flex flex-col space-y-0.5 leading-tight">
+                        <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
+                        {cam.fecha_inicio_auditoria ? (
+                          <span className="text-sky-300 font-semibold">
+                            Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Inicio descarga: --/--/-- --:-- hs</span>
+                        )}
+
+                        <span>
+                          Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria || cam.fecha_fin || cam.created_at)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
+                        </span>
+
+                        {cam.fecha_reapertura && (
+                          <span className="text-amber-300 font-semibold">
+                            Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
+                          </span>
+                        )}
+
+                        {cam.fecha_reapertura && (
+                          <span className={cam.fecha_fin_reapertura ? "text-purple-300 font-semibold" : "text-emerald-400 font-bold"}>
+                            Cierre Reapertura: {cam.fecha_fin_reapertura 
+                              ? `${formatDateTimeArg(cam.fecha_fin_reapertura)}${cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}`
+                              : (cam.estado === 'EN_PROCESO' ? 'En proceso' : 'Sin finalizar')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Métricas Rápidas */}
                   <div className="grid grid-cols-2 gap-2 p-2 bg-[#020b18]/60 border border-sky-500/10 rounded-xl text-xs">
                     <div>
@@ -250,30 +333,92 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ on
                     </div>
                   </div>
 
-                  {/* Botón de Descarga Destacado en Verde Esmeralda */}
+                  {/* Botón Acordeón Trazabilidad para Camiones Finalizados */}
                   <button
-                    onClick={() => handleDownload(item)}
-                    disabled={isDownloading}
-                    className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center space-x-2 shadow-md shadow-emerald-600/30 w-full transition-all active:scale-95 disabled:opacity-50"
+                    type="button"
+                    onClick={() => toggleTruckTimes(cam.id)}
+                    className="w-full py-1.5 px-2.5 bg-[#020b18]/60 hover:bg-[#071938] border border-sky-500/20 hover:border-sky-500/40 text-slate-300 hover:text-sky-200 text-[11px] font-mono rounded-xl flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
                   >
-                    {isDownloading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                        <span>Generando Excel...</span>
-                      </>
+                    <div className="flex items-center space-x-1.5">
+                      <Clock className="w-3.5 h-3.5 text-sky-400" />
+                      <span>{expandedTruckIds[cam.id] ? 'Ocultar trazabilidad' : 'Ver tiempos de trazabilidad'}</span>
+                    </div>
+                    {expandedTruckIds[cam.id] ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-sky-400" />
                     ) : (
-                      <>
-                        <Download className="w-4 h-4 text-white" />
-                        <span>Descargar Excel</span>
-                      </>
+                      <ChevronDown className="w-3.5 h-3.5 text-sky-400" />
                     )}
                   </button>
+
+                  {/* Botones de Acción: Descargar Excel, Reabrir Auditoría y Eliminar Reporte */}
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <button
+                      onClick={() => handleDownload(item)}
+                      disabled={isDownloading}
+                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/30 w-full transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isDownloading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                          <span>Excel...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5 text-white" />
+                          <span>Excel</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setTruckToReopen(cam)}
+                      className="py-2.5 px-3 bg-[#0c2847] hover:bg-[#163a75] text-amber-300 hover:text-amber-200 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl border border-amber-500/30 flex items-center justify-center space-x-1.5 shadow-md w-full transition-all active:scale-95 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Reabrir</span>
+                    </button>
+
+                    <button
+                      onClick={() => setTruckToDelete(cam)}
+                      className="py-2.5 px-3 bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-400 hover:text-red-300 font-['Chakra_Petch'] font-bold text-xs rounded-xl flex items-center justify-center space-x-1 shadow-md transition-all active:scale-95 cursor-pointer"
+                      title="Eliminar este reporte y sus fotos de evidencia definitivamente"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
                 </div>
               );
             })}
           </div>
         )}
       </main>
+
+      {/* Modal Confirmación de Reapertura */}
+      <ConfirmModal
+        isOpen={!!truckToReopen}
+        title="Reabrir Auditoría de Camión NAE"
+        message={`¿Estás seguro de que deseas reabrir la auditoría del camión NAE "${truckToReopen?.numero_nae}"? El estado cambiará a EN PROCESO y podrás continuar escaneando manteniendo todos los conteos previos.`}
+        confirmText="Sí, Reabrir Auditoría"
+        cancelText="Cancelar"
+        isProcessing={isReopening}
+        onClose={() => setTruckToReopen(null)}
+        onConfirm={handleConfirmReopenReport}
+      />
+
+      {/* Modal Confirmación de Eliminación Definitiva y Purga de Evidencias */}
+      <ConfirmModal
+        isOpen={!!truckToDelete}
+        title="Eliminar Reporte y Evidencias"
+        message={`¿Eliminar definitivamente este reporte y sus evidencias? Esta acción purgará las fotos de evidencia de Storage y eliminará el registro del camión NAE "${truckToDelete?.numero_nae}".`}
+        confirmText="Sí, Eliminar Definitivamente"
+        cancelText="Cancelar"
+        isProcessing={isDeleting}
+        onClose={() => setTruckToDelete(null)}
+        onConfirm={handleConfirmDeleteReport}
+      />
+
+      {/* Cápsula Flotante Inferior */}
+      <BottomNavCapsule onBack={onBack} showScan={false} showHome={false} />
     </div>
   );
 };

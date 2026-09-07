@@ -15,7 +15,6 @@ import {
   Wifi, 
   WifiOff, 
   RefreshCw, 
-  ArrowLeft,
   X,
   UserCheck,
   Zap,
@@ -23,22 +22,67 @@ import {
   Trash2,
   Lock,
   PieChart,
-  Menu
+  Menu,
+  Eye,
+  Play,
+  ShieldCheck,
+  Check,
+  PackageX
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useAuditoriaRealtime } from '../hooks/useAuditoriaRealtime';
 import { feedbackService, ScanFeedbackType } from '../utils/feedback';
+import { matchBarcode, sanitizeBarcode } from '../utils/barcodeUtils';
 import { CameraScannerModal } from './CameraScannerModal';
+import { formatNumber, isItemPesable, getUomLabel, resolverUnidadMedidaItem, calcularUnidadesFisicasItem, getIniciales } from '../utils/formatUtils';
 import { ModalIngresoSobrante } from './ModalIngresoSobrante';
 import { CollaboratorProfileModal } from './CollaboratorProfileModal';
 import { BottomNavCapsule } from './BottomNavCapsule';
-import { AuditoriaItem, CamionNAE } from '../types';
+import { ModalModalidadAuditoria } from './ModalModalidadAuditoria';
+import { AuditoriaItem, CamionNAE, isItemInAuditScope } from '../types';
+
+const IconPesableBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Producto Pesable (Kg)" className="inline-flex items-center justify-center shrink-0">
+    <img src="/pesable.png" alt="Pesable" className={`${size} object-contain shrink-0`} />
+  </span>
+);
+
+const IconLitroBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Producto Líquido / Litros" className="inline-flex items-center justify-center shrink-0">
+    <img src="/litro.png" alt="Litro" className={`${size} object-contain shrink-0`} />
+  </span>
+);
+
+const IconUnidadBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Unidad / Bulto Fijo" className="inline-flex items-center justify-center shrink-0">
+    <img src="/unidad.png" alt="Unidad" className={`${size} object-contain shrink-0`} />
+  </span>
+);
+
+const IconAgotadoBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Agotado en Tránsito (Stock <= 0)" className="inline-flex items-center justify-center shrink-0">
+    <img src="/agotado.png" alt="Agotado" className={`${size} object-contain animate-pulse shrink-0`} />
+  </span>
+);
+
+const IconDiferenciaBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Diferencias (Faltantes / Sobrantes)" className="inline-flex items-center justify-center shrink-0">
+    <img src="/diferencia.png" alt="Diferencia" className={`${size} object-contain shrink-0`} />
+  </span>
+);
+
+const IconPendienteBadge: React.FC<{ size?: string }> = ({ size = "w-5 h-5" }) => (
+  <span title="Pendiente de Conteo" className="inline-flex items-center justify-center shrink-0">
+    <img src="/pendiente.png" alt="Pendiente" className={`${size} object-contain shrink-0`} />
+  </span>
+);
 
 interface ScannerViewProps {
   naeId: string;
   onBack?: () => void;
   onHome?: () => void;
   onOpenCierre?: () => void;
+  onOpenConfigModalidad?: () => void;
   collaboratorName?: string;
 }
 
@@ -58,6 +102,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   onBack,
   onHome,
   onOpenCierre,
+  onOpenConfigModalidad,
   collaboratorName 
 }) => {
   // Estado local del camión
@@ -68,8 +113,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     return (collaboratorName || localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
   });
   const [collaboratorAvatar, setCollaboratorAvatar] = useState<string>(() => {
-    return localStorage.getItem('audimas_collaborator_avatar') || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos&backgroundColor=001040';
+    return localStorage.getItem('audimas_collaborator_avatar') || '';
   });
+
+  // Sincronizar estado local de colaborador cuando cambia la prop recibida
+  useEffect(() => {
+    if (collaboratorName) {
+      setCollaborator(collaboratorName.toUpperCase());
+    }
+  }, [collaboratorName]);
 
   // Modal para cambiar colaborador
   const [isUserModalOpen, setIsUserModalOpen] = useState<boolean>(false);
@@ -83,6 +135,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
   const [selectedDepto, setSelectedDepto] = useState<string>('TODOS');
+  type QuickFilterType = 'DIFERENCIAS' | 'PENDIENTES' | 'AGOTADOS' | null;
+  const [statusFilter, setStatusFilter] = useState<QuickFilterType>(null);
 
   // Banner de Feedback del último escaneo
   const [lastScan, setLastScan] = useState<LastScanBanner | null>(null);
@@ -93,6 +147,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [isSobranteModalOpen, setIsSobranteModalOpen] = useState<boolean>(false);
   const [sobranteUpc, setSobranteUpc] = useState<string>('');
   const [sobranteDescripcion, setSobranteDescripcion] = useState<string>('');
+
+  // Modal para configuración de modalidad de auditoría (TOTAL, MONTO, UNIDADES, MIXTO)
+  const [isModalidadModalOpen, setIsModalidadModalOpen] = useState<boolean>(false);
 
   // Referencias para autofoco permanente
   const inputScanRef = useRef<HTMLInputElement>(null);
@@ -116,23 +173,101 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     fetchCamion();
   }, [naeId]);
 
-  const isFinalizado = ['FINALIZADO', 'CERRADO'].includes((camion?.estado || '').trim().toUpperCase());
+  const estUpper = (camion?.estado || '').trim().toUpperCase();
+  const isFinalizado = ['FINALIZADO', 'CERRADO'].includes(estUpper);
+  const esPendiente = estUpper === 'PENDIENTE' || (!camion?.fecha_inicio_auditoria && !isFinalizado);
+  const isReadOnlyMode = esPendiente || isFinalizado;
 
-  // Mantener Autofoco en el input de escaneo (para pistolas Bluetooth y físicas)
-  const focusScanInput = () => {
-    if (isFinalizado) return;
-    const isSearchActive = isSearchFocused || searchQuery.trim().length > 0;
-    if (inputScanRef.current && !isUserModalOpen && !isCameraOpen && !isSobranteModalOpen && !isSearchActive) {
-      inputScanRef.current.focus();
+  // Estados para modal de confirmación de inicio de auditoría desde el banner consulta
+  const [isStartAuditConfirmOpen, setIsStartAuditConfirmOpen] = useState<boolean>(false);
+  const [isStartingAudit, setIsStartingAudit] = useState<boolean>(false);
+
+  const handleConfirmStartAuditFromScanner = async () => {
+    setIsStartingAudit(true);
+    try {
+      const now = new Date().toISOString();
+      const activeUser = (localStorage.getItem('audimas_collaborator') || collaboratorName || 'OPERADOR 1').toUpperCase();
+      const { error } = await supabase
+        .from('camiones_nae')
+        .update({
+          estado: 'EN_PROCESO',
+          fecha_inicio_auditoria: now,
+          usuario_inicio_auditoria: activeUser
+        })
+        .eq('id', naeId);
+
+      if (!error && camion) {
+        setCamion({
+          ...camion,
+          estado: 'EN_PROCESO',
+          fecha_inicio_auditoria: now,
+          usuario_inicio_auditoria: activeUser
+        });
+      }
+      setIsStartAuditConfirmOpen(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al iniciar la auditoría');
+    } finally {
+      setIsStartingAudit(false);
     }
   };
 
+  // Manejo unificado de la navegación por niveles (Nivel 3 -> Nivel 2 -> Nivel 1)
+  const handleBack = () => {
+    // Nivel 3: Detalle / Edición manual de producto
+    if (isSobranteModalOpen) {
+      setIsSobranteModalOpen(false);
+      setSobranteUpc('');
+      setSobranteDescripcion('');
+      return;
+    }
+    // Modales secundarios de la vista de auditoría
+    if (isCameraOpen) {
+      setIsCameraOpen(false);
+      return;
+    }
+    if (isUserModalOpen) {
+      setIsUserModalOpen(false);
+      return;
+    }
+    // Nivel 2 -> Nivel 1: Regresar al Dashboard principal de camiones
+    if (onBack) {
+      onBack();
+    }
+  };
+
+  const handleHome = () => {
+    setIsSobranteModalOpen(false);
+    setIsCameraOpen(false);
+    setIsUserModalOpen(false);
+    if (onHome) {
+      onHome();
+    }
+  };
+
+  // Sincronización con el botón de retroceso nativo del navegador / móvil (Nivel 3)
   useEffect(() => {
-    if (isFinalizado) return;
-    focusScanInput();
-    const interval = setInterval(focusScanInput, 3000);
-    return () => clearInterval(interval);
-  }, [isUserModalOpen, isCameraOpen, isSobranteModalOpen, isSearchFocused, searchQuery, isFinalizado]);
+    if (isSobranteModalOpen || isCameraOpen || isUserModalOpen) {
+      window.history.pushState({ level: 3 }, '');
+
+      const handlePopState = () => {
+        if (isSobranteModalOpen) {
+          setIsSobranteModalOpen(false);
+          setSobranteUpc('');
+          setSobranteDescripcion('');
+        } else if (isCameraOpen) {
+          setIsCameraOpen(false);
+        } else if (isUserModalOpen) {
+          setIsUserModalOpen(false);
+        }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [isSobranteModalOpen, isCameraOpen, isUserModalOpen]);
 
   const formatFechaHorario = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -156,10 +291,37 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     nombre: string;
   }
 
-  // Departamentos únicos para el carrusel de filtros (ordenados numéricamente)
+  const isZeroCountSobrante = (it: AuditoriaItem) => {
+    const isSobranteNoFact = it.es_sobrante_no_facturado || (it.depto_codigo && parseInt(it.depto_codigo, 10) === 999);
+    const uEsc = Number(it.unidades_escaneadas || 0);
+    const bEsc = Number(it.bultos_escaneados || 0);
+    return isSobranteNoFact && uEsc <= 0 && bEsc <= 0;
+  };
+
+  // Departamentos únicos para el carrusel de filtros (ordenados numéricamente, excluyendo sobrantes en 0)
+  // Subconjunto estricto de ítems dentro de la modalidad activa (o con escaneo físico real)
+  const scopedItems = useMemo(() => {
+    return items.filter(it => {
+      if (isZeroCountSobrante(it)) return false;
+
+      const uEscRaw = Number(it.unidades_escaneadas || 0);
+      const bEsc = Number(it.bultos_escaneados || 0);
+      const tieneEscaneoFisico = uEscRaw > 0 || bEsc > 0 || Boolean(it.es_sobrante_no_facturado);
+
+      return isItemInAuditScope(
+        it,
+        camion?.modo_auditoria,
+        camion?.umbral_unidades || 0,
+        camion?.umbral_monto || 0
+      ) || tieneEscaneoFisico;
+    });
+  }, [items, camion]);
+
+  // Departamentos presentes exclusivamente en el subconjunto de auditoría
   const departamentos = useMemo<DeptoFilterOption[]>(() => {
     const mapDeptos = new Map<string, string>();
-    items.forEach(it => {
+    scopedItems.forEach(it => {
+      if (isZeroCountSobrante(it)) return;
       const code = (it.depto_codigo || '').trim();
       if (code) {
         if (!mapDeptos.has(code)) {
@@ -182,70 +344,130 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         nombre: mapDeptos.get(code) || `Depto ${code}`
       }))
     ];
-  }, [items]);
+  }, [scopedItems]);
 
-  // Filtrado y ordenamiento dinámico de ítems por departamento, búsqueda y escaneados recientemente
+  // Conteos exactos para la barra de 3 accesos directos clave
+  const filterCounts = useMemo(() => {
+    let diferencias = 0;
+    let pendientes = 0;
+    let agotados = 0;
+
+    scopedItems.forEach(it => {
+      if (isZeroCountSobrante(it)) return;
+
+      const uEsp = Number(it.unidades_esperadas || 0);
+      const uEscRaw = Number(it.unidades_escaneadas || 0);
+      const bEsc = Number(it.bultos_escaneados || 0);
+      const uEscTotal = calcularUnidadesFisicasItem(it);
+      const esSobrante = Boolean(it.es_sobrante_no_facturado);
+
+      // Botón 1: DIFERENCIAS (unidades_escaneadas !== unidades_esperadas && (unidades_escaneadas > 0 || es_sobrante))
+      const esDiferencia = uEscTotal !== uEsp && (uEscTotal > 0 || esSobrante);
+      if (esDiferencia) diferencias++;
+
+      // Botón 2: PENDIENTES (unidades_escaneadas === 0 && bultos_escaneados === 0)
+      const esSinEscaneo = uEscRaw === 0 && bEsc === 0;
+      if (esSinEscaneo) pendientes++;
+
+      // Botón 3: AGOTADOS (es_agotado_transito === true || stock_on_hand <= 0)
+      const stockVal = (it as any).stock_on_hand ?? it.stock_disponible;
+      const esAgotado = Boolean(it.es_agotado_transito) || (stockVal !== undefined && stockVal !== null && Number(stockVal) <= 0);
+      if (esAgotado) agotados++;
+    });
+
+    return {
+      diferencias,
+      pendientes,
+      agotados
+    };
+  }, [scopedItems]);
+
+  // Filtrado y ordenamiento dinámico de tarjetas de ítems por departamento, accesos directos y búsqueda
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
 
-    // 1. Filtrar por departamento y texto de búsqueda
-    const matched = items.filter(it => {
+    // 1. Filtrar por departamento, acceso directo clave de estado y texto de búsqueda
+    const matched = scopedItems.filter(it => {
+      if (isZeroCountSobrante(it)) return false;
+
       const matchDepto = selectedDepto === 'TODOS' || (it.depto_codigo || '').trim() === selectedDepto;
-      if (!q) return matchDepto;
+      if (!matchDepto) return false;
+
+      // Variables para los accesos directos clave
+      const uEsp = Number(it.unidades_esperadas || 0);
+      const uEscRaw = Number(it.unidades_escaneadas || 0);
+      const bEsc = Number(it.bultos_escaneados || 0);
+      const uEscTotal = calcularUnidadesFisicasItem(it);
+      const esSobrante = Boolean(it.es_sobrante_no_facturado);
+
+      if (statusFilter === 'DIFERENCIAS') {
+        const esDiferencia = uEscTotal !== uEsp && (uEscTotal > 0 || esSobrante);
+        if (!esDiferencia) return false;
+      }
+
+      if (statusFilter === 'PENDIENTES') {
+        const esSinEscaneo = uEscRaw === 0 && bEsc === 0;
+        if (!esSinEscaneo) return false;
+      }
+
+      if (statusFilter === 'AGOTADOS') {
+        const stockVal = (it as any).stock_on_hand ?? it.stock_disponible;
+        const esAgotado = Boolean(it.es_agotado_transito) || (stockVal !== undefined && stockVal !== null && Number(stockVal) <= 0);
+        if (!esAgotado) return false;
+      }
+
+      if (!q) return true;
+
+      if (!q) return true;
 
       const upcClean = (it.upc || '').toLowerCase().trim();
       const skuClean = (it.sku || '').toLowerCase().trim();
       const descClean = (it.descripcion || '').toLowerCase().trim();
 
       const matchQuery = 
+        matchBarcode(q, it.upc) ||
+        matchBarcode(q, it.sku) ||
         upcClean.includes(q) || 
         skuClean.includes(q) || 
         descClean.includes(q) ||
         upcClean.endsWith(q) ||
         skuClean.endsWith(q);
 
-      return matchDepto && matchQuery;
+      return matchQuery;
     });
 
-    // 2. Ordenamiento dinámico:
-    // Prioridad 1: Escaneados / Auditados (más recientemente modificado arriba en 1er lugar)
-    // Prioridad 2: Pendientes / Sin escanear (debajo, manteniendo su orden de importación)
+    // 2. Ordenamiento dinámico
     return [...matched].sort((a, b) => {
       const aTieneEscaneo = Number(a.bultos_escaneados || 0) > 0 || Number(a.unidades_escaneadas || 0) > 0 || Boolean(a.es_sobrante_no_facturado) || Boolean(a.updated_at);
       const bTieneEscaneo = Number(b.bultos_escaneados || 0) > 0 || Number(b.unidades_escaneadas || 0) > 0 || Boolean(b.es_sobrante_no_facturado) || Boolean(b.updated_at);
 
-      // Si ambos tienen historial de escaneo, el más recientemente actualizado va primero
       if (aTieneEscaneo && bTieneEscaneo) {
         const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
         const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
         return timeB - timeA;
       }
 
-      // Si solo A tiene escaneo, A va arriba
       if (aTieneEscaneo && !bTieneEscaneo) return -1;
-      // Si solo B tiene escaneo, B va arriba
       if (!aTieneEscaneo && bTieneEscaneo) return 1;
 
-      // Si ninguno tiene escaneo (pendientes), mantener su orden de importación
       return 0;
     });
-  }, [items, selectedDepto, searchQuery]);
+  }, [scopedItems, selectedDepto, statusFilter, searchQuery]);
 
-  // Totales de avance unificados
+  // Totales de avance unificados sobre los ítems dentro de la modalidad
   const stats = useMemo(() => {
     let esperados = 0;
     let escaneados = 0;
     let bultosEsperados = 0;
     let bultosEscaneados = 0;
 
-    items.forEach(it => {
+    scopedItems.forEach(it => {
       const uEsp = Number(it.unidades_esperadas || 0);
       const bEsp = Number(it.bultos_esperados || 0);
       const uEsc = Number(it.unidades_escaneadas || 0);
       const bEsc = Number(it.bultos_escaneados || 0);
 
-      const unPorBulto = bEsp > 0 ? (uEsp / bEsp) : 1;
-      const unTotalesItem = (bEsc * unPorBulto) + uEsc;
+      const unTotalesItem = calcularUnidadesFisicasItem(it);
 
       esperados += uEsp;
       escaneados += unTotalesItem;
@@ -257,14 +479,125 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
     const porcentajeBultos = bultosEsperados > 0 ? Math.min(100, Math.round((bultosEscaneados / bultosEsperados) * 100)) : 0;
 
     return { esperados, escaneados, bultosEsperados, bultosEscaneados, porcentajeUnidades, porcentajeBultos };
-  }, [items]);
+  }, [scopedItems]);
+
+  // Estadísticas Dinámicas según Modalidad Elegida (TOTAL, MONTO, UNIDADES, MIXTO)
+  const modoStats = useMemo(() => {
+    let uEspTotal = 0;
+    let bEspTotal = 0;
+    let uEscTotal = 0;
+    let bEscTotal = 0;
+    let montoEscTotal = 0;
+    const modo = camion?.modo_auditoria || 'TOTAL';
+    const montoEsperadoTotal = camion?.monto_total_esperado || 0;
+
+    scopedItems.forEach(it => {
+      const uEsp = Number(it.unidades_esperadas || 0);
+      const bEsp = Number(it.bultos_esperados || 0);
+      const uEsc = Number(it.unidades_escaneadas || 0);
+      const bEsc = Number(it.bultos_escaneados || 0);
+      const cUnit = Number(it.costo_unitario || 0);
+
+      const factor = (bEsp > 0 && uEsp > 0) ? (uEsp / bEsp) : 1;
+      const uFisicas = calcularUnidadesFisicasItem(it);
+
+      uEspTotal += uEsp;
+      bEspTotal += bEsp;
+      uEscTotal += uFisicas;
+      bEscTotal += (bEsp > 0 && factor > 0 ? (bEsc + (uEsc / factor)) : bEsc);
+      montoEscTotal += (uFisicas * cUnit);
+    });
+
+    let porcentaje = 0;
+    let subtitle = '';
+    let modoLabel = '100% TOTAL';
+    let badgeColor = 'bg-[#0c244d] text-sky-300 border-sky-500/30';
+
+    const uTh = camion?.umbral_unidades || 0;
+    const mTh = camion?.umbral_monto || 0;
+
+    if (modo === 'MONTO') {
+      modoLabel = `MODO MONTO (≥ $${mTh.toLocaleString('es-AR')})`;
+      badgeColor = 'bg-purple-600/30 text-purple-300 border-purple-500/30';
+      const metaM = camion?.meta_monto || montoEsperadoTotal;
+      porcentaje = metaM > 0 ? Math.min(100, Math.round((montoEscTotal / metaM) * 100)) : 100;
+      subtitle = `$${montoEscTotal.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} / $${metaM.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+    } else if (modo === 'UNIDADES') {
+      modoLabel = `MODO UNIDADES (≥ ${formatNumber(uTh)} un)`;
+      badgeColor = 'bg-emerald-600/30 text-emerald-300 border-emerald-500/30';
+      const metaU = camion?.meta_unidades || uEspTotal;
+      porcentaje = metaU > 0 ? Math.min(100, Math.round((uEscTotal / metaU) * 100)) : 100;
+      subtitle = `${formatNumber(uEscTotal)} / ${formatNumber(metaU)} un`;
+    } else if (modo === 'MIXTO') {
+      modoLabel = `MODO MIXTO (≥ ${formatNumber(uTh)} un / $${mTh.toLocaleString('es-AR')})`;
+      badgeColor = 'bg-indigo-600/30 text-indigo-300 border-indigo-500/30';
+      const metaM = camion?.meta_monto || montoEsperadoTotal;
+      const metaU = camion?.meta_unidades || uEspTotal;
+      const pctM = metaM > 0 ? Math.min(100, Math.round((montoEscTotal / metaM) * 100)) : 100;
+      const pctU = metaU > 0 ? Math.min(100, Math.round((uEscTotal / metaU) * 100)) : 100;
+      porcentaje = Math.round((pctM + pctU) / 2);
+      subtitle = `$${Math.round(montoEscTotal).toLocaleString('es-AR')} ($) • ${formatNumber(uEscTotal)} un (${pctU}%)`;
+    } else {
+      // TOTAL (100%)
+      modoLabel = '100% TOTAL';
+      badgeColor = 'bg-[#0c244d] text-sky-300 border-sky-500/30';
+      porcentaje = uEspTotal > 0 ? Math.min(100, Math.round((uEscTotal / uEspTotal) * 100)) : 100;
+      subtitle = `${formatNumber(bEscTotal)} / ${formatNumber(bEspTotal)} bultos • ${formatNumber(uEscTotal)} / ${formatNumber(uEspTotal)} un`;
+    }
+
+    return {
+      modo,
+      modoLabel,
+      badgeColor,
+      porcentaje,
+      subtitle
+    };
+  }, [scopedItems, camion]);
+
+  // Avance de porcentaje específico por departamento seleccionado
+  const deptoStats = useMemo(() => {
+    if (selectedDepto === 'TODOS') return null;
+
+    let esperados = 0;
+    let escaneados = 0;
+
+    items.forEach(it => {
+      if ((it.depto_codigo || '').trim() === selectedDepto) {
+        const uEsp = Number(it.unidades_esperadas || 0);
+        const bEsp = Number(it.bultos_esperados || 0);
+        const uEsc = Number(it.unidades_escaneadas || 0);
+        const bEsc = Number(it.bultos_escaneados || 0);
+
+        const unPorBulto = bEsp > 0 ? (uEsp / bEsp) : 1;
+        const unTotalesItem = (bEsc * unPorBulto) + uEsc;
+
+        esperados += uEsp;
+        escaneados += unTotalesItem;
+      }
+    });
+
+    const porcentaje = esperados > 0 
+      ? Math.min(100, Math.round((escaneados / esperados) * 100)) 
+      : (escaneados > 0 ? 100 : 0);
+    const esCompleto = porcentaje >= 100;
+
+    const deptoObj = departamentos.find(d => d.codigo === selectedDepto);
+    const nombre = deptoObj ? deptoObj.nombre : `Depto ${selectedDepto}`;
+
+    return {
+      nombre,
+      porcentaje,
+      esCompleto
+    };
+  }, [items, selectedDepto, departamentos]);
 
   // Función interna para llamar a la RPC registrar_escaneo
   const procesarRegistroEscaneo = async (
     cleanUpc: string, 
     modo: 'BULTOS' | 'UNIDADES', 
     cantidad: number,
-    cajaSeparada: boolean = false
+    cajaSeparada: boolean = false,
+    danoInfo?: { cantidadDanada: number; observacionDano: string; fotoDanoUrl: string; fotosDanoUrls?: string[] }
   ) => {
     setIsScanning(true);
     setScanInput('');
@@ -283,38 +616,64 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
         throw new Error(error.message);
       }
 
+      if (danoInfo && (danoInfo.cantidadDanada > 0 || danoInfo.observacionDano || danoInfo.fotoDanoUrl)) {
+        await supabase
+          .from('auditoria_items')
+          .update({
+            cantidad_danada: danoInfo.cantidadDanada,
+            observacion_dano: danoInfo.observacionDano,
+            foto_dano_url: danoInfo.fotoDanoUrl,
+            updated_at: new Date().toISOString()
+          })
+          .eq('nae_id', naeId)
+          .eq('upc', cleanUpc);
+      }
+
       if (data && data.success) {
-        const itemUpdated: AuditoriaItem = data.data;
+        const itemUpdated: AuditoriaItem | undefined = Array.isArray(data.data) ? data.data[0] : data.data;
+        if (itemUpdated && danoInfo) {
+          itemUpdated.cantidad_danada = danoInfo.cantidadDanada;
+          itemUpdated.observacion_dano = danoInfo.observacionDano;
+          itemUpdated.foto_dano_url = danoInfo.fotoDanoUrl;
+        }
         let scanType: ScanFeedbackType = 'OK';
         let title = '';
         let subtitle = '';
 
-        if (itemUpdated.es_agotado_transito) {
+        const esAgotado = itemUpdated?.es_agotado_transito ?? false;
+        const descripcion = itemUpdated?.descripcion || '';
+        const esSobranteNoFact = itemUpdated?.es_sobrante_no_facturado ?? false;
+        const bEsc = Number(itemUpdated?.bultos_escaneados ?? 0);
+        const bEsp = Number(itemUpdated?.bultos_esperados ?? 0);
+        const uEsc = Number(itemUpdated?.unidades_escaneadas ?? 0);
+        const uEsp = Number(itemUpdated?.unidades_esperadas ?? 0);
+
+        if (esAgotado) {
           scanType = 'AGOTADO_TRANSITO';
           title = '🚨 AGOTADO EN TRÁNSITO REGISTRADO';
           subtitle = cajaSeparada ? 'Caja separada correctamente para góndola.' : 'Recuerda separar 1 caja a góndola.';
-        } else if (itemUpdated.descripcion.includes('⚠️ PRODUCTO NO ENCONTRADO')) {
+        } else if (descripcion.includes('⚠️ PRODUCTO NO ENCONTRADO')) {
           scanType = 'DESCONOCIDO';
           title = '⚠️ CÓDIGO FUERA DE CATÁLOGO';
           subtitle = '⚠️ PRODUCTO NO ENCONTRADO - BUSCAR DATOS EN SIM';
-        } else if (itemUpdated.es_sobrante_no_facturado) {
+        } else if (esSobranteNoFact) {
           scanType = 'SOBRANTE_MAESTRO';
           title = '🟣 SOBRANTE NO FACTURADO';
-          subtitle = `Producto "${itemUpdated.descripcion}" no venía en el camión. Encontrado en Catálogo Maestro.`;
+          subtitle = `Producto "${descripcion}" no venía en el camión. Encontrado en Catálogo Maestro.`;
         } else if (
-          (modo === 'BULTOS' && itemUpdated.bultos_escaneados > itemUpdated.bultos_esperados) ||
-          (modo === 'UNIDADES' && itemUpdated.unidades_escaneadas > itemUpdated.unidades_esperadas)
+          (modo === 'BULTOS' && bEsc > bEsp) ||
+          (modo === 'UNIDADES' && uEsc > uEsp)
         ) {
           scanType = 'SOBRANTE_FACTURA';
           title = '🟡 SOBRANTE SOBRE FACTURA';
           const ex = modo === 'BULTOS' 
-            ? itemUpdated.bultos_escaneados - itemUpdated.bultos_esperados 
-            : itemUpdated.unidades_escaneadas - itemUpdated.unidades_esperadas;
+            ? bEsc - bEsp 
+            : uEsc - uEsp;
           subtitle = `Llevas +${ex} ${modo.toLowerCase()} por encima de lo esperado.`;
         } else {
           scanType = 'OK';
           title = '🟢 CONTEO REGISTRADO';
-          subtitle = `Llevas ${modo === 'BULTOS' ? itemUpdated.bultos_escaneados : itemUpdated.unidades_escaneadas} de ${modo === 'BULTOS' ? itemUpdated.bultos_esperados : itemUpdated.unidades_esperadas} ${modo.toLowerCase()}.`;
+          subtitle = `Llevas ${modo === 'BULTOS' ? formatNumber(bEsc) : formatNumber(uEsc)} de ${modo === 'BULTOS' ? formatNumber(bEsp) : formatNumber(uEsp)} ${modo === 'BULTOS' ? 'bultos' : getUomLabel(itemUpdated?.unidad_medida)}.`;
         }
 
         feedbackService.trigger(scanType);
@@ -336,26 +695,44 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
       setLastScan({
         type: 'ERROR',
         title: '❌ ERROR DE PROCESAMIENTO',
-        subtitle: err instanceof Error ? err.message : 'Error desconocido al escanear',
+        subtitle: 'No se pudo actualizar el conteo. Verificá la conexión.',
         timestamp: Date.now()
       });
     } finally {
       setIsScanning(false);
-      focusScanInput();
     }
   };
 
-  // Manejador del Escaneo Inicial (Apertura universal del Modal en CADA escaneo o ingreso manual)
+  // Manejador del Escaneo Inicial con Coincidencia Elástica
   const handleExecuteScan = async (upcToScan: string) => {
-    const cleanUpc = upcToScan.trim();
+    const cleanUpc = sanitizeBarcode(upcToScan);
     if (!cleanUpc || isScanning) return;
 
-    // Buscar si el producto ya está en la lista de auditoría del camión
-    const itemEnCamion = items.find(it => (it.upc || '').trim() === cleanUpc);
+    // Buscar si el producto ya está en la lista de auditoría del camión (coincidencia elástica de UPC / EAN / SKU)
+    const itemEnCamion = items.find(it => matchBarcode(cleanUpc, it.upc) || matchBarcode(cleanUpc, it.sku));
 
-    // Abrir SIEMPRE el modal táctil de auditoría/ingreso sin sumar cantidades automáticamente
+    // Si el producto pertenece al camión pero está fuera de la muestra de la modalidad
+    if (itemEnCamion) {
+      const inScope = isItemInAuditScope(
+        itemEnCamion,
+        camion?.modo_auditoria,
+        camion?.umbral_unidades || 0,
+        camion?.umbral_monto || 0
+      );
+
+      if (!inScope) {
+        setToastMessage({
+          id: Date.now().toString(),
+          message: `⚠️ Este producto no pertenece a la muestra de la modalidad configurada`,
+          colaborador: collaborator,
+          timestamp: new Date()
+        });
+      }
+    }
+
+    // Abrir SIEMPRE el modal táctil de auditoría/ingreso
     setScanInput('');
-    setSobranteUpc(cleanUpc);
+    setSobranteUpc(itemEnCamion ? itemEnCamion.upc : cleanUpc);
     setSobranteDescripcion(itemEnCamion ? itemEnCamion.descripcion : '');
     setIsSobranteModalOpen(true);
   };
@@ -364,14 +741,15 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const handleConfirmSobrante = async (
     cantidad: number, 
     modo: 'BULTOS' | 'UNIDADES' = 'UNIDADES',
-    cajaSeparada: boolean = false
+    cajaSeparada: boolean = false,
+    danoInfo?: { cantidadDanada: number; observacionDano: string; fotoDanoUrl: string; fotosDanoUrls?: string[] }
   ) => {
     if (!sobranteUpc) return;
     const upcParaProcesar = sobranteUpc;
     setIsSobranteModalOpen(false);
     setSobranteUpc('');
     setSobranteDescripcion('');
-    await procesarRegistroEscaneo(upcParaProcesar, modo, cantidad, cajaSeparada);
+    await procesarRegistroEscaneo(upcParaProcesar, modo, cantidad, cajaSeparada, danoInfo);
   };
 
   // Ajuste rápido manual (+ / -) directamente en la tarjeta de ítem
@@ -394,7 +772,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#001f7a] via-[#001040] to-[#00081d] text-white flex flex-col font-sans pb-44 select-none">
+    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-52 select-none">
       
       {/* 1. HEADER FIJO DE AUDITORÍA GDS */}
       <header className="sticky top-0 z-40 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 shadow-lg">
@@ -427,11 +805,11 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             title={`Operario: ${collaborator} • Cambiar Perfil`}
           >
             <div className="w-7 h-7 rounded-full bg-[#020b18] overflow-hidden flex items-center justify-center border border-sky-400/40 shrink-0">
-              {collaboratorAvatar ? (
+              {collaboratorAvatar && collaboratorAvatar.trim() !== '' ? (
                 <img src={collaboratorAvatar} alt="Avatar" className="w-7 h-7 rounded-full object-cover" />
               ) : (
                 <span className="font-['Chakra_Petch'] font-bold text-[10px] text-sky-300">
-                  {collaborator.substring(0, 2)}
+                  {getIniciales(collaborator)}
                 </span>
               )}
             </div>
@@ -444,24 +822,78 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
         </div>
 
-        {/* Barra de Avance de Unidades y Bultos */}
-        <div className="px-3.5 pb-2.5 space-y-1.5">
-          <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
-            <span className="flex items-center space-x-1 font-['Chakra_Petch'] uppercase tracking-wider text-sky-400">
-              <Boxes className="w-3.5 h-3.5 text-sky-400" />
-              <span>Avance Mercadería</span>
-            </span>
-            <span className="font-mono text-sky-300">
-              {stats.escaneados.toLocaleString()} / {stats.esperados.toLocaleString()} un ({stats.porcentajeUnidades}%)
-            </span>
+        {/* Barra de Avance Dinámica según Modalidad */}
+        <div className="px-3.5 pb-2.5 space-y-2">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+              <div className="flex items-center space-x-1.5">
+                {esPendiente ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenConfigModalidad) {
+                        onOpenConfigModalidad();
+                      } else {
+                        setIsModalidadModalOpen(true);
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-lg border font-['Chakra_Petch'] text-[10px] font-bold uppercase flex items-center space-x-1 hover:brightness-125 transition-all cursor-pointer ${modoStats.badgeColor}`}
+                    title="Configurar Modalidad y Umbrales de Auditoría"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>{modoStats.modoLabel}</span>
+                  </button>
+                ) : (
+                  <div
+                    className={`px-2 py-0.5 rounded-lg border font-['Chakra_Petch'] text-[10px] font-bold uppercase flex items-center space-x-1 select-none ${modoStats.badgeColor}`}
+                    title="Modalidad fijada para esta auditoría (Solo Lectura)"
+                  >
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>{modoStats.modoLabel}</span>
+                  </div>
+                )}
+              </div>
+
+              <span className="font-mono text-sky-300">
+                {modoStats.subtitle} ({modoStats.porcentaje}%)
+              </span>
+            </div>
+
+            <div className="w-full bg-[#020b18] rounded-full h-2.5 overflow-hidden flex shadow-inner border border-sky-500/10">
+              <div 
+                className="bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-400 h-full rounded-full transition-all duration-300 shadow-sm"
+                style={{ width: `${modoStats.porcentaje}%` }}
+              />
+            </div>
           </div>
 
-          <div className="w-full bg-[#020b18] rounded-full h-2.5 overflow-hidden flex shadow-inner border border-sky-500/10">
-            <div 
-              className="bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-400 h-full rounded-full transition-all duration-300 shadow-sm"
-              style={{ width: `${stats.porcentajeUnidades}%` }}
-            />
-          </div>
+          {/* Barra de Avance Específica por Departamento Seleccionado */}
+          {selectedDepto !== 'TODOS' && deptoStats && (
+            <div className="pt-2 border-t border-sky-500/15 space-y-1 animate-fade-in">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-['Chakra_Petch'] font-bold text-sky-200 truncate max-w-[240px]">
+                  {deptoStats.nombre}: <span className="font-mono font-black text-white">{deptoStats.porcentaje}%</span>
+                </span>
+                {deptoStats.esCompleto && (
+                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center space-x-1 shrink-0 uppercase tracking-wider">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Auditado 100%</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="w-full bg-[#020b18] rounded-full h-1.5 overflow-hidden flex shadow-inner border border-sky-500/10">
+                <div 
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    deptoStats.esCompleto
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm shadow-emerald-500/40'
+                      : 'bg-gradient-to-r from-cyan-500 to-sky-400 shadow-sm'
+                  }`}
+                  style={{ width: `${deptoStats.porcentaje}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Carrusel Deslizable por Código de Departamento */}
@@ -516,9 +948,41 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           </div>
         )}
 
+        {/* BANNER MODO CONSULTA PARA CAMIÓN PENDIENTE (SIN INICIAR) */}
+        {esPendiente && (
+          <div className="p-3.5 bg-[#061833] border-2 border-sky-500/80 rounded-2xl text-sky-200 text-xs shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-start space-x-3">
+              <Eye className="w-6 h-6 text-sky-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-extrabold text-sm text-white flex items-center space-x-1.5">
+                  <span>👁️ Modo Consulta (Auditoría Pendiente)</span>
+                </h4>
+                <p className="text-[11px] text-sky-200/90 mt-0.5 font-medium leading-relaxed">
+                  Estás visualizando los {items.length} productos esperados. Las acciones de escaneo/conteo están en espera hasta presionar "Iniciar Auditoría".
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenConfigModalidad) {
+                  onOpenConfigModalidad();
+                } else {
+                  setIsModalidadModalOpen(true);
+                }
+              }}
+              className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-1.5 shrink-0 transition-all active:scale-95 cursor-pointer"
+            >
+              <Play className="w-4 h-4 fill-white" />
+              <span>Iniciar Auditoría</span>
+            </button>
+          </div>
+        )}
+
         {/* 2. INPUT DE ESCANEO Y BÚSQUEDA CON AUTO-FOCUS Y TECLADO NUMÉRICO */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2.5 shadow-xl">
-          {!isFinalizado && (
+          {!isFinalizado && !esPendiente && (
             <form 
               onSubmit={(e) => {
                 e.preventDefault();
@@ -540,16 +1004,6 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   className="w-full pl-10 pr-3 py-3 bg-slate-950 border-2 border-blue-500/80 focus:border-blue-400 text-white font-mono text-lg tracking-wider font-bold rounded-xl placeholder:text-slate-500 placeholder:text-sm placeholder:tracking-normal focus:outline-none focus:ring-4 focus:ring-blue-500/20"
                 />
               </div>
-
-              {/* Botón de Cámara Móvil */}
-              <button
-                type="button"
-                onClick={() => setIsCameraOpen(true)}
-                className="p-3 bg-slate-800 hover:bg-slate-700 active:bg-slate-700 text-blue-400 rounded-xl border border-slate-700 shadow-md transition-colors"
-                title="Escaneo por Cámara"
-              >
-                <Camera className="w-5 h-5" />
-              </button>
 
               {/* Botón Enter / Enviar manual */}
               <button
@@ -580,15 +1034,72 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                 onClick={() => {
                   setSearchQuery('');
                   setIsSearchFocused(false);
-                  setTimeout(() => {
-                    if (inputScanRef.current) inputScanRef.current.focus();
-                  }, 50);
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
+          </div>
+
+          {/* Barra de 3 Accesos Directos Clave: DIFERENCIAS, PENDIENTES, AGOTADOS con Íconos Oficiales */}
+          <div className="grid grid-cols-3 gap-1.5 w-full pt-1">
+            {/* Botón 1: DIFERENCIAS */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter(prev => prev === 'DIFERENCIAS' ? null : 'DIFERENCIAS')}
+              className={`py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-semibold uppercase tracking-tight flex items-center justify-center space-x-1 transition-all cursor-pointer ${
+                statusFilter === 'DIFERENCIAS'
+                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/30 border-2 border-amber-300 ring-2 ring-amber-500/40 font-bold'
+                  : 'bg-[#020b18] text-slate-300 hover:text-white border border-sky-500/20 hover:border-amber-500/40'
+              }`}
+            >
+              <IconDiferenciaBadge size="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>DIFERENCIAS</span>
+              <span className={`px-1 py-0.2 rounded-full text-[10px] font-mono font-bold shrink-0 ${
+                statusFilter === 'DIFERENCIAS' ? 'bg-slate-950 text-amber-300' : 'bg-amber-500/20 text-amber-300'
+              }`}>
+                ({filterCounts.diferencias})
+              </span>
+            </button>
+
+            {/* Botón 2: PENDIENTES */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter(prev => prev === 'PENDIENTES' ? null : 'PENDIENTES')}
+              className={`py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-semibold uppercase tracking-tight flex items-center justify-center space-x-1 transition-all cursor-pointer ${
+                statusFilter === 'PENDIENTES'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 border-2 border-blue-300 ring-2 ring-blue-500/40 font-bold'
+                  : 'bg-[#020b18] text-slate-300 hover:text-white border border-sky-500/20 hover:border-blue-500/40'
+              }`}
+            >
+              <IconPendienteBadge size="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>PENDIENTES</span>
+              <span className={`px-1 py-0.2 rounded-full text-[10px] font-mono font-bold shrink-0 ${
+                statusFilter === 'PENDIENTES' ? 'bg-slate-950 text-blue-300' : 'bg-blue-500/20 text-blue-300'
+              }`}>
+                ({filterCounts.pendientes})
+              </span>
+            </button>
+
+            {/* Botón 3: AGOTADOS */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter(prev => prev === 'AGOTADOS' ? null : 'AGOTADOS')}
+              className={`py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-semibold uppercase tracking-tight flex items-center justify-center space-x-1 transition-all cursor-pointer ${
+                statusFilter === 'AGOTADOS'
+                  ? 'bg-red-600 text-white shadow-lg shadow-red-600/30 border-2 border-red-300 ring-2 ring-red-500/40 font-bold'
+                  : 'bg-[#020b18] text-slate-300 hover:text-white border border-sky-500/20 hover:border-red-500/40'
+              }`}
+            >
+              <IconAgotadoBadge size="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>AGOTADOS</span>
+              <span className={`px-1 py-0.2 rounded-full text-[10px] font-mono font-bold shrink-0 ${
+                statusFilter === 'AGOTADOS' ? 'bg-slate-950 text-red-300' : 'bg-red-500/20 text-red-300'
+              }`}>
+                ({filterCounts.agotados})
+              </span>
+            </button>
           </div>
         </div>
 
@@ -649,8 +1160,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
             </div>
           ) : (
             filteredItems.map((item) => {
-              const esAgotado = item.es_agotado_transito;
-              const esSobrante = item.es_sobrante_no_facturado;
+              const esAgotado = item?.es_agotado_transito ?? false;
+              const esSobrante = item?.es_sobrante_no_facturado ?? false;
 
               const bEsp = Number(item.bultos_esperados || 0);
               const uEsp = Number(item.unidades_esperadas || 0);
@@ -663,14 +1174,14 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
               // Consolidación matemática de bultos y unidades sueltas
               const bultosConsolidados = Math.floor(totalUnidadesIngresadas / unidadesPorBulto);
-              const unidadesRemanentes = Math.round(totalUnidadesIngresadas % unidadesPorBulto);
+              const unidadesRemanentes = Number((totalUnidadesIngresadas % unidadesPorBulto).toFixed(3));
 
               let textoAuditado = 'Auditado: 0 bultos';
               if (totalUnidadesIngresadas > 0) {
                 if (unidadesRemanentes === 0) {
-                  textoAuditado = `Auditado: ${bultosConsolidados} ${bultosConsolidados === 1 ? 'bulto' : 'bultos'}`;
+                  textoAuditado = `Auditado: ${formatNumber(bultosConsolidados)} ${bultosConsolidados === 1 ? 'bulto' : 'bultos'}`;
                 } else {
-                  textoAuditado = `Auditado: ${bultosConsolidados} ${bultosConsolidados === 1 ? 'bulto' : 'bultos'} + ${unidadesRemanentes} un sueltas`;
+                  textoAuditado = `Auditado: ${formatNumber(bultosConsolidados)} ${bultosConsolidados === 1 ? 'bulto' : 'bultos'} + ${formatNumber(unidadesRemanentes)} un sueltas`;
                 }
               }
 
@@ -702,9 +1213,9 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   }}
                   className={`border rounded-2xl p-3.5 space-y-2.5 shadow-md transition-all cursor-pointer hover:border-blue-500/50 active:scale-[0.99] ${cardBorderClass}`}
                 >
-                  {/* Fila 1: Badges y Departamento */}
-                  <div className="flex items-center justify-between text-[10px] font-extrabold gap-1 flex-wrap">
-                    <span className="px-2 py-0.5 bg-[#0c244d] border border-sky-500/30 text-sky-200 text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider rounded-lg shadow-sm">
+                  {/* Fila 1: Badges y Departamento en línea horizontal única */}
+                  <div className="flex items-center justify-between text-[10px] font-extrabold gap-1.5 w-full min-w-0">
+                    <span className="px-2 py-0.5 bg-[#0c244d] border border-sky-500/30 text-sky-200 text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider rounded-lg shadow-sm truncate shrink">
                       {item.es_sobrante_no_facturado || item.depto_codigo === '999'
                         ? '999 - DESCONOCIDO'
                         : item.depto_codigo 
@@ -712,40 +1223,46 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                         : (item.depto_nombre || 'GENERAL')}
                     </span>
 
-                    <div className="flex items-center space-x-1">
-                      {esAgotado && (
-                        <span className="px-2 py-0.5 bg-red-500 text-white rounded-md flex items-center space-x-1 animate-pulse">
-                          <AlertOctagon className="w-3 h-3" />
-                          <span>AGOTADO EN TRÁNSITO</span>
+                    <div className="flex items-center space-x-1 shrink-0">
+                      {/* Ícono UOM (Pesable, Litro o Unidad) */}
+                      {(() => {
+                        const uomType = resolverUnidadMedidaItem(item);
+                        if (uomType === 'KG') return <IconPesableBadge />;
+                        if (uomType === 'L') return <IconLitroBadge />;
+                        return <IconUnidadBadge />;
+                      })()}
+
+                      {Number(item.cantidad_danada || 0) > 0 && (
+                        <span className="px-1.5 py-0.5 bg-red-950/90 text-red-200 border border-red-500/60 rounded-md font-extrabold flex items-center space-x-1 shadow-sm">
+                          <PackageX className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                          <span>📦 {formatNumber(item.cantidad_danada)} {Number(item.cantidad_danada) === 1 ? 'Dañado' : 'Dañados'}</span>
                         </span>
                       )}
 
+                      {esAgotado && (
+                        <IconAgotadoBadge />
+                      )}
+
                       {esSobrante && (
-                        <span className="px-2 py-0.5 bg-purple-600 text-white rounded-md">
+                        <span className="px-1.5 py-0.5 bg-purple-600 text-white rounded-md">
                           SOBRANTE NO FACTURADO
                         </span>
                       )}
 
-                      {esCompletado && (
-                        <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-md font-bold">
-                          COMPLETADO
-                        </span>
-                      )}
-
                       {esSobreFactura && (
-                        <span className="px-2 py-0.5 bg-amber-500 text-slate-950 rounded-md font-bold">
-                          SOBRANTE FACTURA (+{totalUnidadesIngresadas - totalUnidadesEsperadas} un)
+                        <span className="px-1.5 py-0.5 bg-amber-500 text-slate-950 rounded-md font-bold">
+                          SOBRANTE FACTURA (+{formatNumber(totalUnidadesIngresadas - totalUnidadesEsperadas)} un)
                         </span>
                       )}
 
                       {esEnProgreso && (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white rounded-md font-bold">
+                        <span className="px-1.5 py-0.5 bg-blue-600 text-white rounded-md font-bold">
                           EN PROGRESO
                         </span>
                       )}
 
                       {esPendiente && (
-                        <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded-md font-bold">
+                        <span className="px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded-md font-bold">
                           PENDIENTE
                         </span>
                       )}
@@ -779,7 +1296,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                             ? 'text-blue-400 font-mono'
                             : 'text-slate-300 font-mono'
                         }>
-                  {totalUnidadesIngresadas} / {totalUnidadesEsperadas} un
+                          {formatNumber(totalUnidadesIngresadas)} / {formatNumber(totalUnidadesEsperadas)} un
                         </span>
                       </div>
 
@@ -789,9 +1306,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Botón táctil rápido + (solo en modo activo) */}
-                    {!isFinalizado && (
-                      <div className="flex items-center space-x-1.5">
+                    {/* Botón táctil rápido + e indicador de completado con tilde verde */}
+                    <div className="flex items-center space-x-2">
+                      {esCompletado && (
+                        <div 
+                          className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white font-bold shrink-0 animate-scale-up" 
+                          title="100% Auditado / Completado"
+                        >
+                          <Check className="w-5 h-5 stroke-[3]" />
+                        </div>
+                      )}
+
+                      {!isFinalizado && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -801,8 +1327,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                         >
                           <Plus className="w-4 h-4" />
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {/* Fila 4: Último colaborador que auditó */}
@@ -854,32 +1380,65 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           setIsSobranteModalOpen(false);
           setSobranteUpc('');
           setSobranteDescripcion('');
-          focusScanInput();
         }}
+        onHome={handleHome}
         onConfirm={handleConfirmSobrante}
       />
 
       {/* ESTRUCTURA VERTICAL SEPARADA (SIN ENCIMARSE) CENTRADA EN UNA SOLA COLUMNA */}
-      <div className="fixed bottom-4 inset-x-0 mx-auto w-fit z-50 flex flex-col items-center space-y-3 pointer-events-none">
-        {/* ARRIBA (PRIMER BLOQUE): BOTÓN VER RESUMEN INDEPENDIENTE */}
-        {onOpenCierre && (
-          <button
-            type="button"
-            onClick={onOpenCierre}
-            className="pointer-events-auto px-6 py-2.5 bg-[#071733]/95 hover:bg-[#0e2a56] border border-sky-500/40 rounded-2xl flex items-center justify-center space-x-2 shadow-2xl text-sky-200 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider active:scale-95 transition-all backdrop-blur-md cursor-pointer whitespace-nowrap"
-          >
-            <PieChart className="w-4 h-4 text-sky-400" />
-            <span>Ver Resumen</span>
-          </button>
-        )}
+      {!isSobranteModalOpen && (
+        <div className="fixed bottom-4 inset-x-0 z-50 flex flex-col items-center justify-center gap-2 pointer-events-none">
+          {/* ARRIBA (PRIMER BLOQUE): BOTÓN VER RESUMEN SIEMPRE VISIBLE JUSTO ARRIBA DE LA CÁPSULA */}
+          {onOpenCierre && (
+            <button
+              type="button"
+              onClick={onOpenCierre}
+              className="pointer-events-auto px-6 py-2.5 bg-[#071733]/95 hover:bg-[#0e2a56] border border-sky-500/40 rounded-2xl flex items-center justify-center space-x-2 shadow-2xl text-sky-200 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider active:scale-95 transition-all backdrop-blur-md cursor-pointer whitespace-nowrap"
+            >
+              <PieChart className="w-4 h-4 text-sky-400" />
+              <span>Ver Resumen</span>
+            </button>
+          )}
 
-        {/* ABAJO (SEGUNDO BLOQUE): CÁPSULA DE NAVEGACIÓN FLOTANTE */}
-        <BottomNavCapsule
-          onBack={onBack}
-          onHome={onHome}
-          className="pointer-events-auto bg-[#061833]/95 backdrop-blur-md border border-sky-500/30 rounded-full px-4 py-2 flex items-center space-x-3.5 shadow-2xl animate-fade-in font-sans select-none"
-        />
-      </div>
+          {/* DEBAJO (SEGUNDO BLOQUE): CÁPSULA DE NAVEGACIÓN CON 3 ELEMENTOS SIMÉTRICOS */}
+          <BottomNavCapsule
+            onBack={handleBack}
+            onScan={!isReadOnlyMode ? () => setIsCameraOpen(true) : undefined}
+            onHome={handleHome}
+            className="pointer-events-auto bg-[#061833]/95 backdrop-blur-md border border-sky-500/30 rounded-full px-4 py-2 flex items-center justify-center space-x-3 shadow-2xl animate-fade-in font-sans select-none"
+          />
+        </div>
+      )}
+
+      {/* MODAL DE SELECCIÓN DE MODALIDAD DE AUDITORÍA CON CANDADOS */}
+      <ModalModalidadAuditoria
+        isOpen={isModalidadModalOpen}
+        naeId={naeId}
+        numeroNae={camion?.numero_nae || ''}
+        tieneReporteAp={camion?.tiene_reporte_ap}
+        montoTotalEsperado={camion?.monto_total_esperado}
+        unidadesTotalesEsperadas={stats.esperados}
+        currentModo={camion?.modo_auditoria}
+        currentMetaMonto={camion?.meta_monto}
+        currentMetaUnidades={camion?.meta_unidades}
+        currentMetaPorcentaje={camion?.meta_porcentaje}
+        onClose={() => setIsModalidadModalOpen(false)}
+        onConfirm={(modo: any, metaMonto?: number, metaUnidades?: number, metaPorcentaje?: number) => {
+          const now = new Date().toISOString();
+          if (camion) {
+            setCamion({
+              ...camion,
+              estado: 'EN_PROCESO',
+              fecha_inicio_auditoria: camion.fecha_inicio_auditoria || now,
+              modo_auditoria: modo,
+              meta_monto: metaMonto,
+              meta_unidades: metaUnidades,
+              meta_porcentaje: metaPorcentaje
+            });
+          }
+          setIsModalidadModalOpen(false);
+        }}
+      />
     </div>
   );
 };

@@ -43,7 +43,39 @@ export const useAuditoriaRealtime = (naeId: string | null) => {
         throw new Error(fetchErr.message);
       }
 
-      setItems(data || []);
+      const rawItems: AuditoriaItem[] = data || [];
+
+      // Enriquecer unidad_medida consultando maestro_productos por SKU y UPC
+      const skus = Array.from(new Set(rawItems.map(i => (i.sku || '').trim()).filter(Boolean)));
+      const upcs = Array.from(new Set(rawItems.map(i => (i.upc || '').trim()).filter(Boolean)));
+
+      if (skus.length > 0 || upcs.length > 0) {
+        try {
+          const { data: masterList } = await supabase
+            .from('maestro_productos')
+            .select('sku, upc, unidad_medida')
+            .or(`sku.in.(${skus.map(s => `"${s}"`).join(',')}),upc.in.(${upcs.map(u => `"${u}"`).join(',')})`);
+
+          if (masterList && masterList.length > 0) {
+            const masterMap = new Map<string, string>();
+            masterList.forEach(m => {
+              if (m.sku && m.unidad_medida) masterMap.set(m.sku.trim(), m.unidad_medida.trim());
+              if (m.upc && m.unidad_medida) masterMap.set(m.upc.trim(), m.unidad_medida.trim());
+            });
+
+            rawItems.forEach(it => {
+              const uomFromMaster = masterMap.get((it.sku || '').trim()) || masterMap.get((it.upc || '').trim());
+              if (uomFromMaster) {
+                it.unidad_medida = uomFromMaster;
+              }
+            });
+          }
+        } catch (mErr) {
+          console.warn('⚠️ No se pudo enriquecer unidad_medida desde maestro_productos:', mErr);
+        }
+      }
+
+      setItems(rawItems);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al cargar ítems de auditoría';
       setError(msg);
@@ -55,6 +87,16 @@ export const useAuditoriaRealtime = (naeId: string | null) => {
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  // Auto-dismiss de la notificación toast a los 8 segundos (8000 ms)
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   /**
    * Suscripción a Supabase Realtime

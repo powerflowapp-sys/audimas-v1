@@ -74,6 +74,8 @@ export const UploadExcelModal: React.FC<UploadExcelModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
+
+
   if (!isOpen) return null;
 
   const resetState = () => {
@@ -276,7 +278,7 @@ export const UploadExcelModal: React.FC<UploadExcelModalProps> = ({
                   <Upload className="w-7 h-7" />
                 </div>
                 <p className="text-sm font-bold text-slate-800 mb-1 uppercase tracking-wide">
-                  {activeTab === 'MAESTRO' ? 'TOCA PARA ACTUALIZAR CATÁLOGO EXCEL' : 'Toca aquí para seleccionar el archivo Excel'}
+                  Arrastrá y soltá tu archivo Excel acá o hacé clic para buscar
                 </p>
                 <p className="text-xs text-slate-500">
                   Formatos soportados: .xlsx, .xls
@@ -295,25 +297,43 @@ export const UploadExcelModal: React.FC<UploadExcelModalProps> = ({
 
           {/* Mensaje de Error */}
           {errorMessage && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-start space-x-3 text-xs sm:text-sm animate-fade-in">
-              <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-bold">Error en la lectura o carga</p>
-                <p className="mt-1">{errorMessage}</p>
-                <button
-                  type="button"
-                  onClick={resetState}
-                  className="mt-2 text-xs font-semibold underline hover:text-red-800 flex items-center gap-1"
-                >
-                  <RefreshCw className="w-3 h-3" /> Reintentar selección
-                </button>
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-start justify-between space-x-3 text-xs sm:text-sm animate-fade-in transition-all">
+              <div className="flex items-start space-x-3 min-w-0 flex-1">
+                <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold">Error en la lectura o carga</p>
+                  <p className="mt-1">{errorMessage}</p>
+                  <button
+                    type="button"
+                    onClick={resetState}
+                    className="mt-2 text-xs font-semibold underline hover:text-red-800 flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Reintentar selección
+                  </button>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setErrorMessage(null)}
+                className="p-1 text-red-400 hover:text-red-700 rounded-lg transition-colors shrink-0"
+                title="Descartar aviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
           {/* Mensaje de Éxito */}
           {successMessage && (
-            <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-center space-y-3 animate-fade-in">
+            <div className="relative p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-center space-y-3 animate-fade-in transition-all">
+              <button
+                type="button"
+                onClick={() => setSuccessMessage(null)}
+                className="absolute right-3 top-3 p-1 text-emerald-500 hover:text-emerald-800 rounded-lg transition-colors"
+                title="Descartar aviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
               <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
               <div>
                 <h3 className="font-bold text-base text-emerald-900">¡Sincronización Completada!</h3>

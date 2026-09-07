@@ -42,11 +42,14 @@ export interface CamionNAE {
 }
 
 /**
- * Determina de forma unificada y resiliente si un camión fue cerrado de forma PARCIAL
+ * Determina de forma unificada y resiliente si un camión fue cerrado de forma PARCIAL.
+ * Si el camión fue reabierto y está actualmente EN_PROCESO, retorna false.
  */
 export const isCamionCierreParcial = (camion?: Partial<CamionNAE> | null): boolean => {
   if (!camion) return false;
   const est = (camion.estado || '').trim().toUpperCase();
+  if (est === 'EN_PROCESO') return false;
+
   return Boolean(camion.es_parcial) || 
     camion.tipo_cierre === 'PARCIAL' || 
     est === 'FINALIZADO_PARCIAL' || 

@@ -507,12 +507,14 @@ export const App: React.FC = () => {
 
   const handleConfirmReopenTruck = async () => {
     if (!truckToReopen) return;
+    const targetId = truckToReopen.id;
     setIsReopening(true);
     try {
       const activeUser = collaborator || 'OPERADOR 1';
-      await reabrirCamionNae(truckToReopen.id, activeUser);
+      await reabrirCamionNae(targetId, activeUser);
       setTruckToReopen(null);
       await fetchCamiones();
+      navigateTo('SCAN', targetId);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al reabrir la auditoría');
     } finally {
@@ -1193,6 +1195,10 @@ export const App: React.FC = () => {
             onBack={() => {
               fetchCamiones();
               navigateTo('LIST');
+            }}
+            onReopenAndScan={async (naeId) => {
+              await fetchCamiones();
+              navigateTo('SCAN', naeId);
             }}
           />
         );

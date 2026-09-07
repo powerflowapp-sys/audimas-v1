@@ -785,6 +785,8 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
 
   const updateData: any = {
     estado: 'EN_PROCESO',
+    es_parcial: false,
+    tipo_cierre: null,
     fecha_fin_auditoria: primerCierre,
     fecha_reapertura: now,
     fecha_fin_reapertura: null,
@@ -792,17 +794,39 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
     updated_at: now
   };
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('camiones_nae')
     .update(updateData)
     .eq('id', naeId);
 
+  // Fallback si la base de datos no posee las columnas es_parcial o tipo_cierre
   if (error) {
+    delete updateData.es_parcial;
+    delete updateData.tipo_cierre;
+    const fallbackRes = await supabase
+      .from('camiones_nae')
+      .update(updateData)
+      .eq('id', naeId);
+    error = fallbackRes.error;
+  }
+
+  if (error) {
+    console.error('❌ Error al actualizar camiones_nae a EN_PROCESO:', error);
     throw new Error(`No se pudo reabrir la auditoría del camión: ${error.message}`);
   }
 
-  // Registrar log de reapertura en auditoria_logs para trazabilidad acumulativa
-  try {
+  // Registrar log de reapertura de forma SÍNCRONA en auditoria_logs para trazabilidad
+  const logRes = await supabase.from('auditoria_logs').insert({
+    nae_id: naeId,
+    upc: 'LOG_REAPERTURA',
+    colaborador_nombre: activeUser,
+    modo_conteo: 'UNIDADES',
+    cantidad: 1,
+    created_at: now
+  });
+
+  if (logRes.error) {
+    console.warn('⚠️ Fallback insert en auditoria_logs sin created_at explícito:', logRes.error);
     await supabase.from('auditoria_logs').insert({
       nae_id: naeId,
       upc: 'LOG_REAPERTURA',
@@ -810,8 +834,6 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
       modo_conteo: 'UNIDADES',
       cantidad: 1
     });
-  } catch (e) {
-    console.warn('⚠️ Error registrando log de reapertura en auditoria_logs:', e);
   }
 
   // Limpiar snapshot guardado en localStorage
@@ -826,6 +848,11 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
   } catch (e) {
     console.warn('Advertencia al limpiar snapshot cache:', e);
   }
+
+  // Invalidar caché general de camiones NAE en localStorage
+  try {
+    localStorage.removeItem('audimas_camiones_cache');
+  } catch (e) {}
 
   return true;
 };

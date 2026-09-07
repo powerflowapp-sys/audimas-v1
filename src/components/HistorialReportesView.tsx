@@ -11,7 +11,8 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
-  Trash2
+  Trash2,
+  Lock
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { 
@@ -33,6 +34,7 @@ import { ConfirmModal } from './ConfirmModal';
 
 interface HistorialReportesViewProps {
   onBack: () => void;
+  onReopenAndScan?: (naeId: string) => void;
 }
 
 interface ReporteHistorialItem {
@@ -46,7 +48,8 @@ interface ReporteHistorialItem {
 }
 
 export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({ 
-  onBack
+  onBack,
+  onReopenAndScan
 }) => {
   const [reportes, setReportes] = useState<ReporteHistorialItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -158,11 +161,16 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
   const handleConfirmReopenReport = async () => {
     if (!truckToReopen) return;
     setIsReopening(true);
+    const targetId = truckToReopen.id;
     try {
       const activeUser = (localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
-      await reabrirCamionNae(truckToReopen.id, activeUser);
+      await reabrirCamionNae(targetId, activeUser);
       setTruckToReopen(null);
-      await cargarHistorial();
+      if (onReopenAndScan) {
+        onReopenAndScan(targetId);
+      } else {
+        await cargarHistorial();
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Error al reabrir la auditoría');
     } finally {
@@ -282,14 +290,20 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                       <span className="font-mono font-black text-sm text-sky-400">
                         NAE: {cam.numero_nae}
                       </span>
-                      {isCamionCierreParcial(cam) ? (
+                      {cam.estado === 'EN_PROCESO' ? (
+                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                          <span>EN PROCESO</span>
+                        </span>
+                      ) : isCamionCierreParcial(cam) ? (
                         <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1">
                           <Clock className="w-3 h-3 text-amber-400" />
                           <span>FINALIZADO PARCIAL</span>
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-[10px] font-['Chakra_Petch'] font-bold">
-                          CERRADO
+                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1">
+                          <Lock className="w-3 h-3 text-purple-400" />
+                          <span>FINALIZADO</span>
                         </span>
                       )}
                     </div>

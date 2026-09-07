@@ -709,7 +709,7 @@ export const exportarPlanillaReclamoMagmaExcel = async (
   const nowIso = new Date().toISOString();
   await updateReclamoMagma(reclamo.id, {
     fecha_ultima_exportacion: nowIso,
-    estado: reclamo.estado === 'PENDIENTE' ? 'EXPORTADO' : reclamo.estado,
+    estado: reclamo.estado,
     monto_total_reclamado: montoTotalExportado,
     items_seleccionados: activeKeys,
     cant_skus_afectados: cantSkusExportados,

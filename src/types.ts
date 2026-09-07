@@ -199,7 +199,7 @@ export interface ProductividadColaborador {
   porcentajeParticipacion: number;
 }
 
-export type EstadoReclamoMagma = 'PENDIENTE' | 'EXPORTADO' | 'RECLAMADO' | 'ACEPTADO' | 'RECHAZADO';
+export type EstadoReclamoMagma = 'PENDIENTE' | 'RECLAMADO' | 'ACEPTADO' | 'RECHAZADO';
 
 export interface ReclamoMagma {
   id: string;

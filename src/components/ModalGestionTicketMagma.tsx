@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, FileText, AlertCircle, DollarSign, Calendar, Tag, MessageSquare } from 'lucide-react';
+import { X, Check, FileText, AlertCircle, DollarSign, Tag, MessageSquare, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { ReclamoMagma, EstadoReclamoMagma } from '../types';
 import { updateReclamoMagma } from '../services/reclamosService';
 
@@ -16,7 +16,9 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
   onClose,
   onSaved
 }) => {
-  const [estado, setEstado] = useState<EstadoReclamoMagma>(reclamo.estado || 'PENDIENTE');
+  const [estado, setEstado] = useState<EstadoReclamoMagma>(
+    (reclamo.estado as string) === 'EXPORTADO' ? 'PENDIENTE' : (reclamo.estado || 'PENDIENTE')
+  );
   const [ticketMagma, setTicketMagma] = useState<string>(reclamo.ticket_magma || '');
   const [montoLiquidado, setMontoLiquidado] = useState<string>(
     reclamo.monto_liquidado !== undefined ? String(reclamo.monto_liquidado) : String(reclamo.monto_total_reclamado || '')
@@ -27,9 +29,18 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
+  const isResolucionStage = estado === 'ACEPTADO' || estado === 'RECHAZADO';
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    // Validación: si pasa a RECLAMADO o RESOLUCIÓN, exige número de ticket
+    if ((estado === 'RECLAMADO' || isResolucionStage) && !ticketMagma.trim()) {
+      setErrorMsg('Debés ingresar el N° de Ticket o Incidencia Magma para avanzar el estado.');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -40,19 +51,21 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
         observaciones: observaciones.trim() || undefined
       };
 
-      // Si cambia a RECLAMADO o ingresa ticket y no tenía timestamp
+      // Timestamp de reclamo en Magma
       if ((estado === 'RECLAMADO' || ticketMagma.trim()) && !reclamo.fecha_reclamado_magma) {
         updates.fecha_reclamado_magma = nowIso;
       }
 
-      // Si pasa a ACEPTADO o RECHAZADO
-      if (estado === 'ACEPTADO' || estado === 'RECHAZADO') {
+      // Timestamp y montos de Resolución
+      if (isResolucionStage) {
         if (!reclamo.fecha_resolucion) {
           updates.fecha_resolucion = nowIso;
         }
         if (estado === 'ACEPTADO') {
           const numLiq = parseFloat(montoLiquidado);
           updates.monto_liquidado = !isNaN(numLiq) ? numLiq : reclamo.monto_total_reclamado;
+        } else {
+          updates.monto_liquidado = 0;
         }
       }
 
@@ -77,7 +90,7 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-lg leading-tight">Gestionar Reclamo Magma</h3>
+              <h3 className="font-bold text-lg leading-tight">Gestionar Estado de Reclamo</h3>
               <p className="text-xs text-slate-400 font-medium">NAE {reclamo.nae_numero} — {reclamo.tienda_nombre}</p>
             </div>
           </div>
@@ -92,43 +105,110 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
         {/* Body */}
         <form onSubmit={handleSave} className="p-6 space-y-5">
           {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-sm text-red-700">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-sm text-red-700 font-medium">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          {/* Selector Estado */}
+          {/* Selector de 3 Etapas Operativas */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Estado del Reclamo
+              Etapa del Reclamo (3 Fases)
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'PENDIENTE', label: '⏳ Pendiente', desc: 'Sin cargar en Magma', activeBg: 'bg-amber-500 text-white' },
-                { id: 'EXPORTADO', label: '📊 Exportado', desc: 'Planilla descargada', activeBg: 'bg-blue-600 text-white' },
-                { id: 'RECLAMADO', label: '📑 Reclamado', desc: 'Ticket generado en Magma', activeBg: 'bg-purple-600 text-white' },
-                { id: 'ACEPTADO', label: '✅ Aceptado', desc: 'Aprobado y Liquidado', activeBg: 'bg-emerald-600 text-white' },
-                { id: 'RECHAZADO', label: '❌ Rechazado', desc: 'Desestimado / Sin lugar', activeBg: 'bg-red-600 text-white' },
-              ].map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setEstado(opt.id as EstadoReclamoMagma)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    estado === opt.id
-                      ? `${opt.activeBg} border-transparent shadow-md font-semibold`
-                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="text-sm">{opt.label}</div>
-                  <div className={`text-[10px] ${estado === opt.id ? 'opacity-80' : 'text-slate-400'}`}>{opt.desc}</div>
-                </button>
-              ))}
+            <div className="grid grid-cols-3 gap-2">
+              {/* Etapa 1: PENDIENTE */}
+              <button
+                type="button"
+                onClick={() => setEstado('PENDIENTE')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  estado === 'PENDIENTE'
+                    ? 'bg-amber-500 text-white border-amber-600 shadow-md font-semibold'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-1 text-xs font-bold">
+                  <Clock className="w-3.5 h-3.5" /> 1. Pendiente
+                </div>
+                <div className={`text-[10px] mt-0.5 ${estado === 'PENDIENTE' ? 'opacity-90' : 'text-slate-400'}`}>
+                  Sin cargar
+                </div>
+              </button>
+
+              {/* Etapa 2: RECLAMADO */}
+              <button
+                type="button"
+                onClick={() => setEstado('RECLAMADO')}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  estado === 'RECLAMADO'
+                    ? 'bg-purple-600 text-white border-purple-700 shadow-md font-semibold'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-1 text-xs font-bold">
+                  <Tag className="w-3.5 h-3.5" /> 2. Reclamado
+                </div>
+                <div className={`text-[10px] mt-0.5 ${estado === 'RECLAMADO' ? 'opacity-90' : 'text-slate-400'}`}>
+                  Ticket cargado
+                </div>
+              </button>
+
+              {/* Etapa 3: RESOLUCIÓN */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isResolucionStage) setEstado('ACEPTADO');
+                }}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  isResolucionStage
+                    ? (estado === 'ACEPTADO' ? 'bg-emerald-600 text-white border-emerald-700 shadow-md font-semibold' : 'bg-red-600 text-white border-red-700 shadow-md font-semibold')
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-1 text-xs font-bold">
+                  {estado === 'RECHAZADO' ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />} 3. Resolución
+                </div>
+                <div className={`text-[10px] mt-0.5 ${isResolucionStage ? 'opacity-90' : 'text-slate-400'}`}>
+                  {isResolucionStage ? (estado === 'ACEPTADO' ? 'Dictamen: Aceptado' : 'Dictamen: Rechazado') : 'Dictamen Magma'}
+                </div>
+              </button>
             </div>
           </div>
 
-          {/* Ticket Magma */}
+          {/* Sub-toggle de Dictamen en Etapa 3: RESOLUCIÓN */}
+          {isResolucionStage && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Dictamen de Resolución
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEstado('ACEPTADO')}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    estado === 'ACEPTADO'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Aceptado / Liquidado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEstado('RECHAZADO')}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    estado === 'RECHAZADO'
+                      ? 'bg-red-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <XCircle className="w-4 h-4" /> Rechazado
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Input Ticket Magma */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5 text-slate-400" /> N° Ticket / Incidencia Magma
@@ -138,11 +218,11 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
               value={ticketMagma}
               onChange={(e) => setTicketMagma(e.target.value)}
               placeholder="Ej: INC-94821 o TCK-2026-042"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 uppercase placeholder:normal-case placeholder:font-normal"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 uppercase placeholder:normal-case placeholder:font-normal"
             />
           </div>
 
-          {/* Monto Liquidado (solo si es ACEPTADO) */}
+          {/* Monto Liquidado (Solo si ACEPTADO) */}
           {estado === 'ACEPTADO' && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
               <label className="block text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -169,7 +249,7 @@ export const ModalGestionTicketMagma: React.FC<Props> = ({
               rows={2}
               value={observaciones}
               onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Comentarios adicionales o motivo de rechazo/resolución..."
+              placeholder={estado === 'RECHAZADO' ? "Motivo del rechazo dictaminado por Magma..." : "Comentarios adicionales..."}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none placeholder:text-slate-400"
             />
           </div>

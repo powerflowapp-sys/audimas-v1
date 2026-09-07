@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Copy, Download, Search, Check, FileSpreadsheet, Save, CheckSquare, Square } from 'lucide-react';
+import { X, Copy, Download, Search, Check, FileSpreadsheet, Save, CheckSquare, Square, Printer } from 'lucide-react';
 import { AuditoriaItem, CamionNAE, ReclamoMagma, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
 import { calcularDiscrepanciasReclamo, exportarPlanillaReclamoMagmaExcel, updateReclamoMagma, rescatarCostosDesdeMaestroV8 } from '../services/reclamosService';
 import { enriquecerCamionesConLogsParciales } from '../services/reportService';
 import { getUomLabel } from '../utils/formatUtils';
+import { ReporteAjusteSIMModal } from './ReporteAjusteSIMModal';
 
 interface Props {
   reclamo: ReclamoMagma;
@@ -31,6 +32,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveToast, setSaveToast] = useState<boolean>(false);
+  const [showSIMModal, setShowSIMModal] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isOpen || !reclamo.nae_id) return;
@@ -300,6 +302,15 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
               {saveToast ? '¡Selección Guardada!' : isSaving ? 'Guardando...' : 'Guardar Selección'}
             </button>
 
+            {/* Botón Imprimir Reporte SIM */}
+            <button
+              onClick={() => setShowSIMModal(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir Reporte SIM
+            </button>
+
             {/* Botón Exportar Planilla Magma (Excel) */}
             <button
               onClick={handleExport}
@@ -479,7 +490,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
         {/* Footer */}
         <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <span className="text-xs text-slate-500 font-medium">
-            💡 Tilda o destilda la casilla para incluir o excluir ítems de la planilla Excel de Magma. Usa <Copy className="w-3 h-3 inline mx-0.5 text-slate-400" /> para copiar datos rápidamente.
+            💡 Tilda o destilda la casilla para incluir o excluir ítems de la planilla Excel y del Reporte SIM. Usa <Copy className="w-3 h-3 inline mx-0.5 text-slate-400" /> para copiar datos rápidamente.
           </span>
           <button
             onClick={onClose}
@@ -488,6 +499,17 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
             Cerrar
           </button>
         </div>
+
+        {/* Modal de Reporte Imprimible de Ajuste SIM */}
+        {showSIMModal && (
+          <ReporteAjusteSIMModal
+            isOpen={showSIMModal}
+            onClose={() => setShowSIMModal(false)}
+            reclamo={reclamo}
+            camion={activeCamion}
+            itemsDiscrepantes={selectedDiscrepancias}
+          />
+        )}
 
       </div>
     </div>

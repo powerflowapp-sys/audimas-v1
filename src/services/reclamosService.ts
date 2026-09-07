@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { supabase } from './supabase';
-import { AuditoriaItem, CamionNAE, ReclamoMagma, EstadoReclamoMagma } from '../types';
+import { AuditoriaItem, CamionNAE, ReclamoMagma, EstadoReclamoMagma, isCamionCierreParcial } from '../types';
 import { getItemCostoReferencial, getUomLabel, calcularUnidadesFisicasItem } from '../utils/formatUtils';
 import { evaluarDiscrepanciasCamion } from './reportService';
 
@@ -189,15 +189,14 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
   // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
   const camionesCerrados = camiones.filter(c => {
     const est = (c.estado || '').trim().toUpperCase();
-    return est.includes('CERRADO') || est.includes('FINALIZADO');
+    return est.includes('CERRADO') || est.includes('FINALIZADO') || isCamionCierreParcial(c);
   });
 
   const resultReclamos: ReclamoMagma[] = [];
   const updatedLocalMap = { ...localMap };
 
   for (const camion of camionesCerrados) {
-    const estUpper = (camion.estado || '').trim().toUpperCase();
-    const esParcial = estUpper.includes('PARCIAL');
+    const esParcial = isCamionCierreParcial(camion);
 
     // Buscar reclamo existente por nae_id O por nae_numero
     let reclamo = dbReclamos.find(r => 

@@ -14,13 +14,22 @@ import {
   Trash2
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { CamionNAE, AuditoriaItem } from '../types';
-import { descargarExcelHistorial, eliminarCamionEnCascada } from '../services/historyService';
-import { calcularResumenAuditoria, reabrirCamionNae, formatDateTimeArg, fetchMaxLogDateForTruck } from '../services/reportService';
-import { purgeCamionPhotos } from '../services/storageService';
-import { parseFotoUrls } from '../utils/imageCompressor';
-import { ConfirmModal } from './ConfirmModal';
+import { 
+  CamionNAE, 
+  isCamionCierreParcial,
+  AuditoriaItem
+} from '../types';
+import { 
+  reabrirCamionNae, 
+  formatDateTimeArg,
+  fetchTrazabilidadCamion,
+  EventoTrazabilidad,
+  calcularResumenAuditoria,
+  fetchMaxLogDateForTruck
+} from '../services/reportService';
+import { eliminarCamionEnCascada, descargarExcelHistorial } from '../services/historyService';
 import { BottomNavCapsule } from './BottomNavCapsule';
+import { ConfirmModal } from './ConfirmModal';
 
 interface HistorialReportesViewProps {
   onBack: () => void;
@@ -44,13 +53,22 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // Estados para acordeón de trazabilidad de tiempos
   const [expandedTruckIds, setExpandedTruckIds] = useState<Record<string, boolean>>({});
+  const [trazabilidadMap, setTrazabilidadMap] = useState<Record<string, EventoTrazabilidad[]>>({});
 
-  const toggleTruckTimes = (truckId: string) => {
-    setExpandedTruckIds(prev => ({
-      ...prev,
-      [truckId]: !prev[truckId]
-    }));
+  const toggleTruckTimes = async (naeId: string, camion?: CamionNAE) => {
+    const isExpanding = !expandedTruckIds[naeId];
+    setExpandedTruckIds(prev => ({ ...prev, [naeId]: isExpanding }));
+    
+    if (isExpanding && camion && !trazabilidadMap[naeId]) {
+      try {
+        const evts = await fetchTrazabilidadCamion(naeId, camion);
+        setTrazabilidadMap(prev => ({ ...prev, [naeId]: evts }));
+      } catch (e) {
+        console.warn('Error al cargar trazabilidad:', e);
+      }
+    }
   };
 
   // Estado para modal de confirmación de reapertura
@@ -264,7 +282,7 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                       <span className="font-mono font-black text-sm text-sky-400">
                         NAE: {cam.numero_nae}
                       </span>
-                      {cam.estado === 'FINALIZADO_PARCIAL' || cam.estado === 'CERRADO_PARCIAL' ? (
+                      {isCamionCierreParcial(cam) ? (
                         <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1">
                           <Clock className="w-3 h-3 text-amber-400" />
                           <span>FINALIZADO PARCIAL</span>
@@ -288,36 +306,49 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                     <span>{cam.tienda_codigo} - {cam.tienda_nombre}</span>
                   </div>
 
-                  {/* Cronología de Marcas de Tiempo en GMT-3 (Colapsable en Camiones Finalizados/Cerrados) */}
+                  {/* Cronología de Marcas de Tiempo en GMT-3 (Trazabilidad Acumulativa Completa) */}
                   {Boolean(expandedTruckIds[cam.id]) && (
-                    <div className="text-[10px] sm:text-[11px] text-slate-300 font-mono flex items-start space-x-2 p-2 bg-[#020b18]/60 border border-sky-500/10 rounded-xl animate-fade-in">
+                    <div className="text-[10px] sm:text-[11px] text-slate-300 font-mono flex items-start space-x-2 p-2.5 bg-[#020b18]/80 border border-sky-500/20 rounded-xl animate-fade-in">
                       <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" />
-                      <div className="flex flex-col space-y-0.5 leading-tight">
-                        <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
-                        {cam.fecha_inicio_auditoria ? (
-                          <span className="text-sky-300 font-semibold">
-                            Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">Inicio descarga: --/--/-- --:-- hs</span>
-                        )}
-
-                        <span>
-                          Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria || cam.fecha_fin || cam.created_at)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
+                      <div className="flex flex-col space-y-1.5 leading-tight w-full">
+                        <span className="text-[10px] font-['Chakra_Petch'] font-bold text-sky-300 uppercase tracking-widest border-b border-sky-500/10 pb-1">
+                          Trazabilidad Cronológica de Auditoría
                         </span>
-
-                        {cam.fecha_reapertura && (
-                          <span className="text-amber-300 font-semibold">
-                            Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
-                          </span>
-                        )}
-
-                        {cam.fecha_reapertura && (
-                          <span className={cam.fecha_fin_reapertura ? "text-purple-300 font-semibold" : "text-emerald-400 font-bold"}>
-                            Cierre Reapertura: {cam.fecha_fin_reapertura 
-                              ? `${formatDateTimeArg(cam.fecha_fin_reapertura)}${cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}`
-                              : (cam.estado === 'EN_PROCESO' ? 'En proceso' : 'Sin finalizar')}
-                          </span>
+                        {trazabilidadMap[cam.id] && trazabilidadMap[cam.id].length > 0 ? (
+                          trazabilidadMap[cam.id].map((evt, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-[11px]">
+                              <span className={evt.tipo.includes('REAPERTURA') ? "text-amber-300 font-semibold" : evt.tipo.includes('CIERRE') ? "text-purple-300 font-medium" : "text-sky-200"}>
+                                • {evt.titulo}
+                              </span>
+                              <span className="text-slate-400 font-mono">
+                                {formatDateTimeArg(evt.fecha)}{evt.usuario ? ` • ${evt.usuario}` : ''}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col space-y-0.5 leading-tight">
+                            <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
+                            {cam.fecha_inicio_auditoria && (
+                              <span className="text-sky-300 font-semibold">
+                                Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
+                              </span>
+                            )}
+                            {cam.fecha_fin_auditoria && (
+                              <span>
+                                Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
+                              </span>
+                            )}
+                            {cam.fecha_reapertura && (
+                              <span className="text-amber-300 font-semibold">
+                                Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
+                              </span>
+                            )}
+                            {cam.fecha_fin_reapertura && (
+                              <span className="text-purple-300 font-semibold">
+                                Cierre Reapertura: {formatDateTimeArg(cam.fecha_fin_reapertura)}{cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -343,7 +374,7 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                   {/* Botón Acordeón Trazabilidad para Camiones Finalizados */}
                   <button
                     type="button"
-                    onClick={() => toggleTruckTimes(cam.id)}
+                    onClick={() => toggleTruckTimes(cam.id, cam)}
                     className="w-full py-1.5 px-2.5 bg-[#020b18]/60 hover:bg-[#071938] border border-sky-500/20 hover:border-sky-500/40 text-slate-300 hover:text-sky-200 text-[11px] font-mono rounded-xl flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
                   >
                     <div className="flex items-center space-x-1.5">

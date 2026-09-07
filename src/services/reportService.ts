@@ -540,6 +540,8 @@ export const cerrarCamionNae = async (
 
   const updateData: any = {
     estado: estadoDeseado,
+    es_parcial: esParcial,
+    tipo_cierre: esParcial ? 'PARCIAL' : 'TOTAL',
     updated_at: now
   };
 
@@ -558,22 +560,35 @@ export const cerrarCamionNae = async (
     .update(updateData)
     .eq('id', naeId);
 
-  // Fallback si la DB tiene restricción CHECK estricta
-  if (error && esParcial) {
-    updateData.estado = 'CERRADO_PARCIAL';
-    let fallbackRes = await supabase
-      .from('camiones_nae')
-      .update(updateData)
-      .eq('id', naeId);
+  // Fallback si la DB tiene restricción CHECK estricta o no tiene las columnas es_parcial/tipo_cierre
+  if (error) {
+    // Intentar omitir campos opcionales que pudieran fallar si la columna no existe en Postgres
+    delete updateData.es_parcial;
+    delete updateData.tipo_cierre;
 
-    if (fallbackRes.error) {
-      updateData.estado = 'CERRADO';
-      fallbackRes = await supabase
+    if (esParcial) {
+      updateData.estado = 'CERRADO_PARCIAL';
+      let fallbackRes = await supabase
         .from('camiones_nae')
         .update(updateData)
         .eq('id', naeId);
+
+      if (fallbackRes.error) {
+        updateData.estado = 'CERRADO';
+        fallbackRes = await supabase
+          .from('camiones_nae')
+          .update(updateData)
+          .eq('id', naeId);
+      }
+      error = fallbackRes.error;
+    } else {
+      updateData.estado = 'CERRADO';
+      const fallbackRes = await supabase
+        .from('camiones_nae')
+        .update(updateData)
+        .eq('id', naeId);
+      error = fallbackRes.error;
     }
-    error = fallbackRes.error;
   }
 
   if (error) {
@@ -675,17 +690,15 @@ export const cerrarCamionNae = async (
       }
     });
 
-    if (esParcial) {
-      try {
-        await supabase.from('auditoria_logs').insert({
-          nae_id: naeId,
-          upc: 'LOG_CIERRE_PARCIAL',
-          colaborador_nombre: activeUser,
-          modo_conteo: 'UNIDADES',
-          cantidad: 1
-        });
-      } catch (e) {}
-    }
+    try {
+      await supabase.from('auditoria_logs').insert({
+        nae_id: naeId,
+        upc: esParcial ? 'LOG_CIERRE_PARCIAL' : 'LOG_CIERRE',
+        colaborador_nombre: activeUser,
+        modo_conteo: 'UNIDADES',
+        cantidad: 1
+      });
+    } catch (e) {}
 
     const fechaCierre = updateData.fecha_fin_auditoria || updateData.fecha_fin_reapertura || now;
     const newReclamo: any = {
@@ -743,10 +756,11 @@ export const cerrarCamionNae = async (
 
 /**
  * Reabre formalmente la auditoría del camión NAE en Supabase (estado = 'EN_PROCESO').
- * Preserva intacta la fecha_fin_auditoria del 1° cierre original y registra fecha_reapertura.
+ * Preserva intacta la fecha_fin_auditoria del 1° cierre original y registra fecha_reapertura y log en auditoria_logs.
  */
 export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: string): Promise<boolean> => {
   const now = new Date().toISOString();
+  const activeUser = (usuarioResponsable || localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
 
   const { data: currentCamion } = await supabase
     .from('camiones_nae')
@@ -757,7 +771,6 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
   let primerCierre = currentCamion?.fecha_fin_auditoria || currentCamion?.fecha_fin;
 
   if (!primerCierre) {
-    // Consultar el log con la fecha MÁXIMA de auditoria_logs para este camión
     const maxLogDate = await fetchMaxLogDateForTruck(naeId);
     primerCierre = maxLogDate || currentCamion?.created_at || now;
 
@@ -775,12 +788,9 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
     fecha_fin_auditoria: primerCierre,
     fecha_reapertura: now,
     fecha_fin_reapertura: null,
+    usuario_reapertura: activeUser,
     updated_at: now
   };
-
-  if (usuarioResponsable) {
-    updateData.usuario_reapertura = usuarioResponsable;
-  }
 
   const { error } = await supabase
     .from('camiones_nae')
@@ -789,6 +799,19 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
 
   if (error) {
     throw new Error(`No se pudo reabrir la auditoría del camión: ${error.message}`);
+  }
+
+  // Registrar log de reapertura en auditoria_logs para trazabilidad acumulativa
+  try {
+    await supabase.from('auditoria_logs').insert({
+      nae_id: naeId,
+      upc: 'LOG_REAPERTURA',
+      colaborador_nombre: activeUser,
+      modo_conteo: 'UNIDADES',
+      cantidad: 1
+    });
+  } catch (e) {
+    console.warn('⚠️ Error registrando log de reapertura en auditoria_logs:', e);
   }
 
   // Limpiar snapshot guardado en localStorage
@@ -805,6 +828,124 @@ export const reabrirCamionNae = async (naeId: string, usuarioResponsable?: strin
   }
 
   return true;
+};
+
+export interface EventoTrazabilidad {
+  tipo: 'CARGA' | 'INICIO' | 'CIERRE_INICIAL' | 'REAPERTURA' | 'CIERRE_REAPERTURA';
+  titulo: string;
+  fecha: string;
+  usuario?: string;
+  esParcial?: boolean;
+}
+
+/**
+ * Consulta la auditoría de logs y construye el historial cronológico acumulativo completo
+ * de todas las reaperturas y cierres registrados para un camión NAE.
+ */
+export const fetchTrazabilidadCamion = async (naeId: string, camion: CamionNAE): Promise<EventoTrazabilidad[]> => {
+  const eventos: EventoTrazabilidad[] = [];
+
+  // 1. Carga en Sistema
+  if (camion.created_at) {
+    eventos.push({
+      tipo: 'CARGA',
+      titulo: 'Carga en Sistema',
+      fecha: camion.created_at,
+      usuario: camion.usuario_carga
+    });
+  }
+
+  // 2. Inicio Descarga
+  if (camion.fecha_inicio_auditoria) {
+    eventos.push({
+      tipo: 'INICIO',
+      titulo: 'Inicio descarga',
+      fecha: camion.fecha_inicio_auditoria,
+      usuario: camion.usuario_inicio_auditoria
+    });
+  }
+
+  // 3. Consultar auditoria_logs para obtener todos los eventos históricos de reapertura y cierre
+  try {
+    const { data: logs } = await supabase
+      .from('auditoria_logs')
+      .select('*')
+      .eq('nae_id', naeId)
+      .in('upc', ['LOG_INICIO', 'LOG_REAPERTURA', 'LOG_CIERRE', 'LOG_CIERRE_PARCIAL'])
+      .order('created_at', { ascending: true });
+
+    const logEvents = logs || [];
+
+    let reaperturaCount = 0;
+    logEvents.forEach(log => {
+      if (log.upc === 'LOG_REAPERTURA') {
+        reaperturaCount++;
+        eventos.push({
+          tipo: 'REAPERTURA',
+          titulo: `Reapertura #${reaperturaCount}`,
+          fecha: log.created_at,
+          usuario: log.colaborador_nombre
+        });
+      } else if (log.upc === 'LOG_CIERRE' || log.upc === 'LOG_CIERRE_PARCIAL') {
+        const esParcial = log.upc === 'LOG_CIERRE_PARCIAL';
+        if (reaperturaCount === 0) {
+          if (!eventos.some(e => e.tipo === 'CIERRE_INICIAL')) {
+            eventos.push({
+              tipo: 'CIERRE_INICIAL',
+              titulo: esParcial ? '1° Cierre (Parcial)' : '1° Cierre (Total)',
+              fecha: log.created_at,
+              usuario: log.colaborador_nombre,
+              esParcial
+            });
+          }
+        } else {
+          eventos.push({
+            tipo: 'CIERRE_REAPERTURA',
+            titulo: esParcial ? `Cierre Reapertura #${reaperturaCount} (Parcial)` : `Cierre Reapertura #${reaperturaCount} (Total)`,
+            fecha: log.created_at,
+            usuario: log.colaborador_nombre,
+            esParcial
+          });
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('Error al consultar logs de trazabilidad acumulativa:', e);
+  }
+
+  // Fallbacks si no había logs explícitos grabados previamente:
+  const isCamionParcial = Boolean(camion.es_parcial) || camion.tipo_cierre === 'PARCIAL' || (camion.estado || '').includes('PARCIAL');
+
+  if (!eventos.some(e => e.tipo === 'CIERRE_INICIAL') && camion.fecha_fin_auditoria) {
+    eventos.push({
+      tipo: 'CIERRE_INICIAL',
+      titulo: isCamionParcial ? 'Fin descarga (Parcial)' : 'Fin descarga (Total)',
+      fecha: camion.fecha_fin_auditoria,
+      usuario: camion.usuario_fin_auditoria,
+      esParcial: isCamionParcial
+    });
+  }
+
+  if (!eventos.some(e => e.tipo === 'REAPERTURA') && camion.fecha_reapertura) {
+    eventos.push({
+      tipo: 'REAPERTURA',
+      titulo: 'Reapertura',
+      fecha: camion.fecha_reapertura,
+      usuario: camion.usuario_reapertura
+    });
+  }
+
+  if (!eventos.some(e => e.tipo === 'CIERRE_REAPERTURA') && camion.fecha_fin_reapertura) {
+    eventos.push({
+      tipo: 'CIERRE_REAPERTURA',
+      titulo: isCamionParcial ? 'Cierre Reapertura (Parcial)' : 'Cierre Reapertura (Total)',
+      fecha: camion.fecha_fin_reapertura,
+      usuario: camion.usuario_cierre_reapertura,
+      esParcial: isCamionParcial
+    });
+  }
+
+  return eventos;
 };
 
 /**

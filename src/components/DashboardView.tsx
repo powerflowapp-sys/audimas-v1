@@ -19,7 +19,7 @@ import {
   Scale,
   PlusCircle
 } from 'lucide-react';
-import { CamionNAE, AuditoriaItem } from '../types';
+import { CamionNAE, AuditoriaItem, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
 import { calcularUnidadesFisicasItem } from '../utils/formatUtils';
 
@@ -86,7 +86,7 @@ export const DashboardView: React.FC<Props> = ({ camiones, onRefresh }) => {
       // 1. Filtrar EXCLUSIVAMENTE camiones auditados (FINALIZADO / CERRADO)
       const auditados = camiones.filter(c => {
         const est = (c.estado || '').trim().toUpperCase();
-        return est === 'FINALIZADO' || est === 'CERRADO' || est === 'FINALIZADO_PARCIAL' || est === 'CERRADO_PARCIAL';
+        return est.includes('FINALIZADO') || est.includes('CERRADO') || isCamionCierreParcial(c);
       });
 
       const auditadosIdsSet = new Set(auditados.map(c => c.id));

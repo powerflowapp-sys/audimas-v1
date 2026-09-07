@@ -37,7 +37,7 @@ import { guardarSnapshotReporte } from '../services/historyService';
 import { parseFotoUrls } from '../utils/imageCompressor';
 import { formatNumber, getUomLabel, getItemCostoReferencial, calcularUnidadesFisicasItem } from '../utils/formatUtils';
 import { BottomNavCapsule } from './BottomNavCapsule';
-import { CamionNAE, AuditoriaItem, ProductividadColaborador, isItemInAuditScope } from '../types';
+import { CamionNAE, AuditoriaItem, ProductividadColaborador, isItemInAuditScope, isCamionCierreParcial } from '../types';
 
 interface CierreAuditoriaViewProps {
   naeId: string;
@@ -474,7 +474,7 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                 Resumen NAE #{camion?.numero_nae || '---'}
               </h1>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1 ${
-                camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL'
+                isCamionCierreParcial(camion)
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                   : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' 
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
@@ -482,7 +482,7 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
               }`}>
-                {camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL' ? (
+                {isCamionCierreParcial(camion) ? (
                   <>
                     <Clock className="w-3 h-3 text-amber-400" />
                     <span>FINALIZADO PARCIAL</span>

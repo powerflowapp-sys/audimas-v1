@@ -144,11 +144,14 @@ export const guardarSnapshotReporte = async (
   productividad: ProductividadColaborador[]
 ) => {
   try {
-    const estadoFinal = nae.estado || 'CERRADO';
+    const isParcial = Boolean(nae.es_parcial) || nae.tipo_cierre === 'PARCIAL' || (nae.estado || '').includes('PARCIAL');
+    const estadoFinal = nae.estado || (isParcial ? 'FINALIZADO_PARCIAL' : 'CERRADO');
 
     const naeClosed: CamionNAE = {
       ...nae,
       estado: estadoFinal,
+      es_parcial: isParcial,
+      tipo_cierre: isParcial ? 'PARCIAL' : 'TOTAL',
       fecha_fin_auditoria: nae.fecha_fin_auditoria || new Date().toISOString()
     };
 

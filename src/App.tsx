@@ -23,10 +23,18 @@ import {
   DollarSign
 } from 'lucide-react';
 import { supabase } from './services/supabase';
-import { reabrirCamionNae, formatDateTimeArg, fetchMaxLogDateForTruck, resolveCamionFechas } from './services/reportService';
+import { 
+  reabrirCamionNae, 
+  formatDateTimeArg, 
+  fetchMaxLogDateForTruck, 
+  resolveCamionFechas,
+  fetchTrazabilidadCamion,
+  EventoTrazabilidad 
+} from './services/reportService';
 import { purgeCamionPhotos } from './services/storageService';
 import { eliminarCamionEnCascada, purgerCamionesFinalizadosMayores7Dias } from './services/historyService';
 import { formatStoreDisplay } from './services/excelParsers';
+import { isCamionCierreParcial, CamionNAE } from './types';
 import { CargarCamionView } from './components/CargarCamionView';
 import { CargarMaestroView } from './components/CargarMaestroView';
 import { ScannerView } from './components/ScannerView';
@@ -47,7 +55,7 @@ import { ReclamosMagmaView } from './components/ReclamosMagmaView';
 import { DashboardView } from './components/DashboardView';
 import { OnboardingModal } from './components/OnboardingModal';
 import { SuperAdminView } from './components/SuperAdminView';
-import { CamionNAE, ProfileColaborador } from './types';
+import { ProfileColaborador } from './types';
 import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from './utils/cargoUtils';
 
 
@@ -112,13 +120,6 @@ export const App: React.FC = () => {
   });
 
   const [expandedTruckIds, setExpandedTruckIds] = useState<Record<string, boolean>>({});
-
-  const toggleTruckTimes = (truckId: string) => {
-    setExpandedTruckIds(prev => ({
-      ...prev,
-      [truckId]: !prev[truckId]
-    }));
-  };
 
   // Estado del Colaborador Activo y Avatar (Persistencia localStorage)
   const [collaborator, setCollaborator] = useState<string>(() => {
@@ -639,9 +640,28 @@ export const App: React.FC = () => {
     navigateTo('CIERRE', naeId);
   };
 
+  // Estados para acordeón de trazabilidad de tiempos
+  const [trazabilidadMap, setTrazabilidadMap] = useState<Record<string, EventoTrazabilidad[]>>({});
+
+  const toggleTruckTimes = async (naeId: string, camion?: CamionNAE) => {
+    const isExpanding = !expandedTruckIds[naeId];
+    setExpandedTruckIds(prev => ({ ...prev, [naeId]: isExpanding }));
+
+    if (isExpanding && camion && !trazabilidadMap[naeId]) {
+      try {
+        const evts = await fetchTrazabilidadCamion(naeId, camion);
+        setTrazabilidadMap(prev => ({ ...prev, [naeId]: evts }));
+      } catch (e) {
+        console.warn('Error al obtener trazabilidad acumulativa:', e);
+      }
+    }
+  };
+
   // Renderizador de Badges de Estado para Tarjetas de Camión
-  const renderEstadoBadge = (estado: string) => {
-    const estUpper = (estado || '').trim().toUpperCase();
+  const renderEstadoBadge = (camionOrEstado: CamionNAE | string) => {
+    const camionObj = typeof camionOrEstado === 'object' ? camionOrEstado : null;
+    const estUpper = (typeof camionOrEstado === 'string' ? camionOrEstado : camionOrEstado?.estado || '').trim().toUpperCase();
+
     if (estUpper === 'PENDIENTE') {
       return (
         <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/30 flex items-center space-x-1">
@@ -658,7 +678,7 @@ export const App: React.FC = () => {
         </span>
       );
     }
-    if (estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL') {
+    if (isCamionCierreParcial(camionObj || { estado: estUpper as any })) {
       return (
         <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/40 flex items-center space-x-1">
           <Clock className="w-3 h-3 text-amber-400" />
@@ -835,7 +855,7 @@ export const App: React.FC = () => {
                     </div>
 
                     <div className="flex items-center space-x-1.5">
-                      {renderEstadoBadge(cam.estado)}
+                      {renderEstadoBadge(cam)}
 
                       <button
                         type="button"
@@ -881,38 +901,49 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Cronología de Marcas de Tiempo en GMT-3 (Colapsable en Camiones Finalizados/Cerrados) */}
+                  {/* Cronología de Marcas de Tiempo en GMT-3 (Trazabilidad Acumulativa Completa de Múltiples Reaperturas) */}
                   {(!esCerrado || Boolean(expandedTruckIds[cam.id])) && (
                     <div className="text-[10px] sm:text-[11px] text-slate-300 font-mono flex items-start space-x-2 pt-1 border-t border-sky-500/10 animate-fade-in">
                       <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" />
-                      <div className="flex flex-col space-y-0.5 leading-tight">
-                        <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
-                        {cam.fecha_inicio_auditoria ? (
-                          <span className="text-sky-300 font-semibold">
-                            Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
-                          </span>
+                      <div className="flex flex-col space-y-1.5 leading-tight w-full">
+                        <span className="text-[10px] font-['Chakra_Petch'] font-bold text-sky-300 uppercase tracking-widest border-b border-sky-500/10 pb-1">
+                          Trazabilidad Cronológica de Auditoría
+                        </span>
+                        {trazabilidadMap[cam.id] && trazabilidadMap[cam.id].length > 0 ? (
+                          trazabilidadMap[cam.id].map((evt, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-[11px]">
+                              <span className={evt.tipo.includes('REAPERTURA') ? "text-amber-300 font-semibold" : evt.tipo.includes('CIERRE') ? "text-purple-300 font-medium" : "text-sky-200"}>
+                                • {evt.titulo}
+                              </span>
+                              <span className="text-slate-400 font-mono">
+                                {formatDateTimeArg(evt.fecha)}{evt.usuario ? ` • ${evt.usuario}` : ''}
+                              </span>
+                            </div>
+                          ))
                         ) : (
-                          <span className="text-slate-400">Inicio descarga: --/--/-- --:-- hs</span>
-                        )}
-
-                        {(esCerrado || cam.fecha_reapertura || cam.fecha_fin_auditoria || cam.fecha_fin) && (
-                          <span>
-                            Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria || cam.fecha_fin || cam.created_at)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
-                          </span>
-                        )}
-
-                        {cam.fecha_reapertura && (
-                          <span className="text-amber-300 font-semibold">
-                            Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
-                          </span>
-                        )}
-
-                        {cam.fecha_reapertura && (
-                          <span className={cam.fecha_fin_reapertura ? "text-purple-300 font-semibold" : "text-emerald-400 font-bold"}>
-                            Cierre Reapertura: {cam.fecha_fin_reapertura 
-                              ? `${formatDateTimeArg(cam.fecha_fin_reapertura)}${cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}`
-                              : (estUpper === 'EN_PROCESO' ? 'En proceso' : 'Sin finalizar')}
-                          </span>
+                          <div className="flex flex-col space-y-0.5 leading-tight">
+                            <span>Carga en Sistema: {cam.created_at ? `${formatDateTimeArg(cam.created_at)}${cam.usuario_carga ? ` • ${cam.usuario_carga}` : ''}` : '--/--/-- --:-- hs'}</span>
+                            {cam.fecha_inicio_auditoria && (
+                              <span className="text-sky-300 font-semibold">
+                                Inicio descarga: {formatDateTimeArg(cam.fecha_inicio_auditoria)}{cam.usuario_inicio_auditoria ? ` • ${cam.usuario_inicio_auditoria}` : ''}
+                              </span>
+                            )}
+                            {(esCerrado || cam.fecha_fin_auditoria || cam.fecha_fin) && (
+                              <span>
+                                Fin descarga: {formatDateTimeArg(cam.fecha_fin_auditoria || cam.fecha_fin || cam.created_at)}{cam.usuario_fin_auditoria ? ` • ${cam.usuario_fin_auditoria}` : ''}
+                              </span>
+                            )}
+                            {cam.fecha_reapertura && (
+                              <span className="text-amber-300 font-semibold">
+                                Reapertura: {formatDateTimeArg(cam.fecha_reapertura)}{cam.usuario_reapertura ? ` • ${cam.usuario_reapertura}` : ''}
+                              </span>
+                            )}
+                            {cam.fecha_fin_reapertura && (
+                              <span className="text-purple-300 font-semibold">
+                                Cierre Reapertura: {formatDateTimeArg(cam.fecha_fin_reapertura)}{cam.usuario_cierre_reapertura ? ` • ${cam.usuario_cierre_reapertura}` : ''}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -922,7 +953,7 @@ export const App: React.FC = () => {
                   {esCerrado && (
                     <button
                       type="button"
-                      onClick={() => toggleTruckTimes(cam.id)}
+                      onClick={() => toggleTruckTimes(cam.id, cam)}
                       className="w-full py-1.5 px-2.5 bg-[#020b18]/60 hover:bg-[#071938] border border-sky-500/20 hover:border-sky-500/40 text-slate-300 hover:text-sky-200 text-[11px] font-mono rounded-xl flex items-center justify-between transition-all active:scale-[0.99] cursor-pointer"
                     >
                       <div className="flex items-center space-x-1.5">

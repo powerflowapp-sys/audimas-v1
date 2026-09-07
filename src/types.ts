@@ -17,6 +17,8 @@ export interface CamionNAE {
   tienda_nombre: string;
   fecha_arribo?: string;
   estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO' | 'CERRADO_PARCIAL' | 'FINALIZADO_PARCIAL';
+  es_parcial?: boolean;
+  tipo_cierre?: 'TOTAL' | 'PARCIAL';
   fecha_inicio_auditoria?: string;
   fecha_fin_auditoria?: string;
   fecha_fin?: string;
@@ -38,6 +40,18 @@ export interface CamionNAE {
   usuario_cierre_reapertura?: string;
   created_at?: string;
 }
+
+/**
+ * Determina de forma unificada y resiliente si un camión fue cerrado de forma PARCIAL
+ */
+export const isCamionCierreParcial = (camion?: Partial<CamionNAE> | null): boolean => {
+  if (!camion) return false;
+  const est = (camion.estado || '').trim().toUpperCase();
+  return Boolean(camion.es_parcial) || 
+    camion.tipo_cierre === 'PARCIAL' || 
+    est === 'FINALIZADO_PARCIAL' || 
+    est === 'CERRADO_PARCIAL';
+};
 
 export const isItemInAuditScope = (
   item: { unidades_esperadas: number; costo_total?: number; costo_unitario?: number },

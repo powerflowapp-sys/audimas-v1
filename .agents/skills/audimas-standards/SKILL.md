@@ -21,6 +21,9 @@ Este Agent Skill define las reglas de negocio, esquema de base de datos, estánd
 - **Avatares Predefinidos**: Los 12 avatares SVG predefinidos se guardan directamente como strings SVG / rutas locales.
 - **Fotos de Cámara y Galería**: Se suben como `.jpg` / `.png` a `avatars/{userId}/...` y se guarda su URL pública en `profiles.avatar_url`.
 
+### Entrega Obligatoria de Scripts SQL (Supabase)
+- **ENTREGA OBLIGATORIA DE SCRIPTS SQL (SUPABASE)**: Cada vez que se desarrolle, modifique o sugiera una funcionalidad que involucre nuevas columnas, tablas, tipos ENUM, restricciones CHECK, funciones RPC, políticas RLS o triggers en la base de datos, el agente DEBE entregar explícitamente en su reporte final el bloque de código SQL listo para copiar y ejecutar en el SQL Editor de Supabase. Nunca se debe asumir que el esquema remoto ya cuenta con dichas modificaciones sin haber provisto el script.
+
 ---
 
 ## 2. Reglas de Negocio Operativas

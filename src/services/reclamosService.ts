@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import { supabase } from './supabase';
 import { AuditoriaItem, CamionNAE, ReclamoMagma, EstadoReclamoMagma, isCamionCierreParcial } from '../types';
 import { getItemCostoReferencial, getUomLabel, calcularUnidadesFisicasItem } from '../utils/formatUtils';
-import { evaluarDiscrepanciasCamion } from './reportService';
+import { evaluarDiscrepanciasCamion, enriquecerCamionesConLogsParciales } from './reportService';
 
 const LOCAL_RECLAMOS_KEY = 'audimas_reclamos_magma_cache';
 
@@ -171,6 +171,9 @@ export const calcularDiscrepanciasReclamo = (
 export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<ReclamoMagma[]> => {
   const localMap = getLocalReclamosMap();
 
+  // Cruce preventivo con auditoria_logs para detectar si el último cierre fue PARCIAL
+  const camionesEnriquecidos = await enriquecerCamionesConLogsParciales(camiones);
+
   // 1. Consultar tabla reclamos_magma en Supabase
   let dbReclamos: ReclamoMagma[] = [];
   try {
@@ -187,7 +190,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
   }
 
   // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
-  const camionesCerrados = camiones.filter(c => {
+  const camionesCerrados = camionesEnriquecidos.filter(c => {
     const est = (c.estado || '').trim().toUpperCase();
     return est.includes('CERRADO') || est.includes('FINALIZADO') || isCamionCierreParcial(c);
   });

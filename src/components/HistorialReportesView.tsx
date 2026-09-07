@@ -26,7 +26,8 @@ import {
   fetchTrazabilidadCamion,
   EventoTrazabilidad,
   calcularResumenAuditoria,
-  fetchMaxLogDateForTruck
+  fetchMaxLogDateForTruck,
+  enriquecerCamionesConLogsParciales
 } from '../services/reportService';
 import { eliminarCamionEnCascada, descargarExcelHistorial } from '../services/historyService';
 import { BottomNavCapsule } from './BottomNavCapsule';
@@ -101,10 +102,11 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
       }
 
       const camionesList: CamionNAE[] = camionesData || [];
+      const camionesEnriquecidos = await enriquecerCamionesConLogsParciales(camionesList);
 
       // Para cada camión, calcular resumen en tiempo real desde Supabase (datos vivos)
       const reportesCalculados: ReporteHistorialItem[] = await Promise.all(
-        camionesList.map(async (cam) => {
+        camionesEnriquecidos.map(async (cam) => {
           let updatedCamion = cam;
           if (!cam.fecha_fin_auditoria && !cam.fecha_fin) {
             const maxLogDate = await fetchMaxLogDateForTruck(cam.id);

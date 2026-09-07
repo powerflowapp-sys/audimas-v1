@@ -29,7 +29,8 @@ import {
   fetchMaxLogDateForTruck, 
   resolveCamionFechas,
   fetchTrazabilidadCamion,
-  EventoTrazabilidad 
+  EventoTrazabilidad,
+  enriquecerCamionesConLogsParciales
 } from './services/reportService';
 import { purgeCamionPhotos } from './services/storageService';
 import { eliminarCamionEnCascada, purgerCamionesFinalizadosMayores7Dias } from './services/historyService';
@@ -572,9 +573,11 @@ export const App: React.FC = () => {
           })
         );
 
-        setCamiones(enriched);
+        const fullyEnriched = await enriquecerCamionesConLogsParciales(enriched);
+
+        setCamiones(fullyEnriched);
         try {
-          localStorage.setItem('audimas_camiones_cache', JSON.stringify(enriched));
+          localStorage.setItem('audimas_camiones_cache', JSON.stringify(fullyEnriched));
         } catch (e) {
           console.warn('Error al guardar caché de camiones:', e);
         }

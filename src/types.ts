@@ -19,6 +19,8 @@ export interface CamionNAE {
   estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO' | 'CERRADO_PARCIAL' | 'FINALIZADO_PARCIAL';
   es_parcial?: boolean;
   tipo_cierre?: 'TOTAL' | 'PARCIAL';
+  has_log_parcial?: boolean;
+  has_log_cierre_parcial?: boolean;
   fecha_inicio_auditoria?: string;
   fecha_fin_auditoria?: string;
   fecha_fin?: string;
@@ -43,6 +45,7 @@ export interface CamionNAE {
 
 /**
  * Determina de forma unificada y resiliente si un camión fue cerrado de forma PARCIAL.
+ * Valida estado (FINALIZADO_PARCIAL / CERRADO_PARCIAL), es_parcial, tipo_cierre o cruce de logs (has_log_parcial).
  * Si el camión fue reabierto y está actualmente EN_PROCESO, retorna false.
  */
 export const isCamionCierreParcial = (camion?: Partial<CamionNAE> | null): boolean => {
@@ -53,7 +56,9 @@ export const isCamionCierreParcial = (camion?: Partial<CamionNAE> | null): boole
   return Boolean(camion.es_parcial) || 
     camion.tipo_cierre === 'PARCIAL' || 
     est === 'FINALIZADO_PARCIAL' || 
-    est === 'CERRADO_PARCIAL';
+    est === 'CERRADO_PARCIAL' ||
+    Boolean(camion.has_log_parcial) ||
+    Boolean(camion.has_log_cierre_parcial);
 };
 
 export const isItemInAuditScope = (

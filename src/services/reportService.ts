@@ -976,6 +976,55 @@ export const fetchTrazabilidadCamion = async (naeId: string, camion: CamionNAE):
 };
 
 /**
+ * Consulta la tabla auditoria_logs para verificar si el último evento de cierre
+ * registrado para cada camión fue LOG_CIERRE_PARCIAL. En caso afirmativo, enriquece
+ * el objeto de camión en memoria con es_parcial = true, tipo_cierre = 'PARCIAL' y has_log_parcial = true.
+ */
+export const enriquecerCamionesConLogsParciales = async (camiones: CamionNAE[]): Promise<CamionNAE[]> => {
+  if (!camiones || camiones.length === 0) return camiones;
+  const ids = camiones.map(c => c.id).filter(Boolean);
+  if (ids.length === 0) return camiones;
+
+  try {
+    const { data: logs } = await supabase
+      .from('auditoria_logs')
+      .select('nae_id, upc, created_at')
+      .in('nae_id', ids)
+      .in('upc', ['LOG_CIERRE_PARCIAL', 'LOG_CIERRE', 'LOG_REAPERTURA'])
+      .order('created_at', { ascending: false });
+
+    if (!logs || logs.length === 0) return camiones;
+
+    const partialNaes = new Set<string>();
+    const processedNaes = new Set<string>();
+
+    for (const log of logs) {
+      if (!log.nae_id || processedNaes.has(log.nae_id)) continue;
+      processedNaes.add(log.nae_id);
+      if (log.upc === 'LOG_CIERRE_PARCIAL') {
+        partialNaes.add(log.nae_id);
+      }
+    }
+
+    return camiones.map(c => {
+      if (partialNaes.has(c.id)) {
+        return {
+          ...c,
+          es_parcial: true,
+          tipo_cierre: 'PARCIAL' as const,
+          has_log_parcial: true,
+          has_log_cierre_parcial: true
+        };
+      }
+      return c;
+    });
+  } catch (err) {
+    console.warn('⚠️ Error al enriquecer camiones con logs parciales:', err);
+    return camiones;
+  }
+};
+
+/**
  * Formatea la etiqueta legible para la modalidad / tipo de auditoría del camión
  */
 export const formatTipoAuditoriaLabel = (nae: CamionNAE): string => {

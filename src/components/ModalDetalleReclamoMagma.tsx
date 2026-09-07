@@ -195,6 +195,12 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
     try {
       const keysArray = Array.from(selectedKeys);
       const updated = await updateReclamoMagma(reclamo.id, {
+        nae_id: reclamo.nae_id,
+        nae_numero: reclamo.nae_numero,
+        tienda_codigo: reclamo.tienda_codigo,
+        tienda_nombre: reclamo.tienda_nombre,
+        estado: reclamo.estado,
+        ticket_magma: reclamo.ticket_magma,
         items_seleccionados: keysArray,
         monto_total_reclamado: totalSeleccionadoMagma,
         monto_discrepancias_total: totalDiscrepanciasAuditoria,

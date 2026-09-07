@@ -272,8 +272,8 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       itemsList = await rescatarCostosDesdeMaestroV8(itemsList);
       const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
 
-      // Si el camión es 100% conforme, OMITIR reclamo Magma y purgar de Supabase si existía previamente
-      if (discEval.es100Conforme) {
+      // Si el camión es 100% conforme y NO tiene selección manual previa, OMITIR reclamo Magma y purgar de Supabase
+      if (discEval.es100Conforme && !reclamo?.seleccion_manual) {
         if (reclamo) {
           try {
             await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
@@ -302,10 +302,15 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
       const fechaCierre = camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
 
       if (reclamo) {
-        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO: Preservar montos y selección exactos
-        if (reclamo.seleccion_manual) {
+        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO (incluso con $0.00 o 0 SKUs): Preservar montos y selección exactos
+        if (Boolean(reclamo.seleccion_manual)) {
           reclamo = {
             ...reclamo,
+            monto_total_reclamado: Number(reclamo.monto_total_reclamado || 0),
+            cant_skus_afectados: Number(reclamo.cant_skus_afectados || 0),
+            cant_unidades_afectadas: Number(reclamo.cant_unidades_afectadas || 0),
+            items_seleccionados: Array.isArray(reclamo.items_seleccionados) ? reclamo.items_seleccionados : [],
+            seleccion_manual: true,
             fecha_cierre_auditoria: fechaCierre,
             monto_discrepancias_total: disc.totalMontoReclamado,
             updated_at: new Date().toISOString()
@@ -372,7 +377,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
 };
 
 /**
- * Actualiza un reclamo existente directamente en la base de datos de Supabase (sin usar localStorage).
+ * Actualiza un reclamo existente directamente en la base de datos de Supabase.
  */
 export const updateReclamoMagma = async (
   reclamoId: string, 
@@ -398,6 +403,28 @@ export const updateReclamoMagma = async (
     id: reclamoId,
     updated_at: new Date().toISOString()
   } as ReclamoMagma;
+
+  // Si nae_id falta en updated, intentar extraerlo del id ("rec_{nae_id}")
+  if (!updated.nae_id && reclamoId.startsWith('rec_')) {
+    updated.nae_id = reclamoId.replace('rec_', '');
+  }
+
+  // Asegurar que si seleccion_manual es true y monto_total_reclamado es 0, no sea sobreescrito por null/undefined
+  if (updates.seleccion_manual === true) {
+    updated.seleccion_manual = true;
+    if (updates.monto_total_reclamado !== undefined) {
+      updated.monto_total_reclamado = Number(updates.monto_total_reclamado);
+    }
+    if (updates.cant_skus_afectados !== undefined) {
+      updated.cant_skus_afectados = Number(updates.cant_skus_afectados);
+    }
+    if (updates.cant_unidades_afectadas !== undefined) {
+      updated.cant_unidades_afectadas = Number(updates.cant_unidades_afectadas);
+    }
+    if (updates.items_seleccionados !== undefined) {
+      updated.items_seleccionados = updates.items_seleccionados;
+    }
+  }
 
   // 2. Persistir directamente en la tabla reclamos_magma de Supabase
   try {
@@ -671,6 +698,10 @@ export const exportarPlanillaReclamoMagmaExcel = async (
   // Actualizar timestamp fecha_ultima_exportacion en DB y estado
   const nowIso = new Date().toISOString();
   await updateReclamoMagma(reclamo.id, {
+    nae_id: reclamo.nae_id,
+    nae_numero: reclamo.nae_numero,
+    tienda_codigo: reclamo.tienda_codigo,
+    tienda_nombre: reclamo.tienda_nombre,
     fecha_ultima_exportacion: nowIso,
     estado: reclamo.estado,
     monto_total_reclamado: montoTotalExportado,

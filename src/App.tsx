@@ -658,6 +658,14 @@ export const App: React.FC = () => {
         </span>
       );
     }
+    if (estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL') {
+      return (
+        <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/40 flex items-center space-x-1">
+          <Clock className="w-3 h-3 text-amber-400" />
+          <span>FINALIZADO PARCIAL</span>
+        </span>
+      );
+    }
     return (
       <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-purple-500/20 text-purple-300 border-purple-500/30 flex items-center space-x-1">
         <Lock className="w-3 h-3 text-purple-400" />

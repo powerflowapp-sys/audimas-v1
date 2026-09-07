@@ -86,7 +86,7 @@ export const DashboardView: React.FC<Props> = ({ camiones, onRefresh }) => {
       // 1. Filtrar EXCLUSIVAMENTE camiones auditados (FINALIZADO / CERRADO)
       const auditados = camiones.filter(c => {
         const est = (c.estado || '').trim().toUpperCase();
-        return est === 'FINALIZADO' || est === 'CERRADO';
+        return est === 'FINALIZADO' || est === 'CERRADO' || est === 'FINALIZADO_PARCIAL' || est === 'CERRADO_PARCIAL';
       });
 
       const auditadosIdsSet = new Set(auditados.map(c => c.id));

@@ -144,9 +144,11 @@ export const guardarSnapshotReporte = async (
   productividad: ProductividadColaborador[]
 ) => {
   try {
+    const estadoFinal = nae.estado || 'CERRADO';
+
     const naeClosed: CamionNAE = {
       ...nae,
-      estado: 'CERRADO',
+      estado: estadoFinal,
       fecha_fin_auditoria: nae.fecha_fin_auditoria || new Date().toISOString()
     };
 

@@ -264,9 +264,16 @@ export const HistorialReportesView: React.FC<HistorialReportesViewProps> = ({
                       <span className="font-mono font-black text-sm text-sky-400">
                         NAE: {cam.numero_nae}
                       </span>
-                      <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-[10px] font-['Chakra_Petch'] font-bold">
-                        CERRADO
-                      </span>
+                      {cam.estado === 'FINALIZADO_PARCIAL' || cam.estado === 'CERRADO_PARCIAL' ? (
+                        <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1">
+                          <Clock className="w-3 h-3 text-amber-400" />
+                          <span>FINALIZADO PARCIAL</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-[10px] font-['Chakra_Petch'] font-bold">
+                          CERRADO
+                        </span>
+                      )}
                     </div>
 
                     <span className="text-[10px] font-mono text-slate-300 flex items-center space-x-1">

@@ -536,7 +536,7 @@ export const cerrarCamionNae = async (
   const itemsList = items || [];
   const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
 
-  const estadoDeseado = esParcial ? 'CERRADO_PARCIAL' : 'CERRADO';
+  const estadoDeseado = esParcial ? 'FINALIZADO_PARCIAL' : 'CERRADO';
 
   const updateData: any = {
     estado: estadoDeseado,
@@ -558,13 +558,21 @@ export const cerrarCamionNae = async (
     .update(updateData)
     .eq('id', naeId);
 
-  // Fallback si la DB tiene restricción CHECK sin CERRADO_PARCIAL
+  // Fallback si la DB tiene restricción CHECK estricta
   if (error && esParcial) {
-    updateData.estado = 'CERRADO';
-    const fallbackRes = await supabase
+    updateData.estado = 'CERRADO_PARCIAL';
+    let fallbackRes = await supabase
       .from('camiones_nae')
       .update(updateData)
       .eq('id', naeId);
+
+    if (fallbackRes.error) {
+      updateData.estado = 'CERRADO';
+      fallbackRes = await supabase
+        .from('camiones_nae')
+        .update(updateData)
+        .eq('id', naeId);
+    }
     error = fallbackRes.error;
   }
 
@@ -576,9 +584,12 @@ export const cerrarCamionNae = async (
   let mensajeFeedback = '';
 
   if (discEval.es100Conforme) {
-    // OMITIR la inserción en la tabla reclamos_magma
+    // OMITIR la inserción en la tabla reclamos_magma y eliminar cualquier reclamo previo
     try {
       await supabase.from('reclamos_magma').delete().eq('nae_id', naeId);
+      if (currentCamion?.numero_nae) {
+        await supabase.from('reclamos_magma').delete().eq('nae_numero', currentCamion.numero_nae.trim());
+      }
     } catch (e) {
       console.warn('⚠️ No se pudo eliminar reclamo previo en Supabase:', e);
     }
@@ -589,6 +600,13 @@ export const cerrarCamionNae = async (
         const recMap = JSON.parse(recRaw);
         delete recMap[naeId];
         delete recMap[`rec_${naeId}`];
+        if (currentCamion?.numero_nae) {
+          Object.keys(recMap).forEach(k => {
+            if (recMap[k]?.nae_numero === currentCamion.numero_nae.trim()) {
+              delete recMap[k];
+            }
+          });
+        }
         localStorage.setItem('audimas_reclamos_magma_cache', JSON.stringify(recMap));
       }
     } catch (e) {}
@@ -678,7 +696,7 @@ export const cerrarCamionNae = async (
       tienda_nombre: currentCamion?.tienda_nombre || '',
       estado: 'PENDIENTE',
       monto_total_reclamado: Number(totalMontoReclamado.toFixed(2)),
-      cant_skus_afectados: skuSet.size > 0 ? skuSet.size : itemsList.length,
+      cant_skus_afectados: skuSet.size,
       cant_unidades_afectadas: Number(cantUnidadesAfectadas.toFixed(3)),
       fecha_cierre_auditoria: fechaCierre,
       created_at: now,
@@ -686,7 +704,13 @@ export const cerrarCamionNae = async (
     };
 
     try {
+      // Limpiar reclamos obsoletos antes de upsert
+      await supabase.from('reclamos_magma').delete().eq('nae_id', naeId);
+      if (currentCamion?.numero_nae) {
+        await supabase.from('reclamos_magma').delete().eq('nae_numero', currentCamion.numero_nae.trim());
+      }
       await supabase.from('reclamos_magma').upsert([newReclamo], { onConflict: 'id' });
+      reclamoGenerado = true;
     } catch (e) {
       console.warn('⚠️ Error al crear reclamo en Supabase:', e);
     }

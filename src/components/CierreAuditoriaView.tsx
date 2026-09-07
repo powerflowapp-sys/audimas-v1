@@ -403,7 +403,7 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
         const isReopened = Boolean(camion.fecha_reapertura);
         const camionCerrado: CamionNAE = { 
           ...camion, 
-          estado: 'CERRADO_PARCIAL', 
+          estado: 'FINALIZADO_PARCIAL', 
           fecha_fin_auditoria: isReopened ? camion.fecha_fin_auditoria : new Date().toISOString(),
           fecha_fin_reapertura: isReopened ? new Date().toISOString() : camion.fecha_fin_reapertura,
           usuario_fin_auditoria: isReopened ? camion.usuario_fin_auditoria : activeUser,
@@ -429,23 +429,23 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
   const handleConfirmReopen = async () => {
     setIsReopening(true);
     try {
-      const activeUser = localStorage.getItem('audimas_collaborator') || 'OPERADOR 1';
+      const activeUser = (localStorage.getItem('audimas_collaborator') || 'OPERADOR 1').toUpperCase();
       await reabrirCamionNae(naeId, activeUser);
+
       if (camion) {
         setCamion({
           ...camion,
           estado: 'EN_PROCESO',
-          fecha_fin_auditoria: undefined,
+          fecha_reapertura: new Date().toISOString(),
           usuario_reapertura: activeUser
         });
       }
-      setIsConfirmReopenOpen(false);
       if (onNaeClosed) onNaeClosed();
-      if (onBackToScan) onBackToScan();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al reabrir la auditoría');
+      alert(err instanceof Error ? err.message : 'Error al reabrir auditoría');
     } finally {
       setIsReopening(false);
+      setIsConfirmReopenOpen(false);
     }
   };
 
@@ -463,26 +463,37 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-36 select-none">
+    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-28 select-none">
       
-      {/* Header Fijo GDS */}
-      <header className="sticky top-0 z-40 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 p-3 flex items-center justify-between shadow-md">
+      {/* Header Fijo */}
+      <header className="sticky top-0 z-40 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 p-3 flex items-center justify-between shadow-lg">
         <div className="flex items-center space-x-2.5">
           <div>
             <div className="flex items-center space-x-1.5">
               <h1 className="font-['Chakra_Petch'] font-black text-sm text-sky-300 uppercase tracking-wider">
                 Resumen NAE #{camion?.numero_nae || '---'}
               </h1>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold ${
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1 ${
                 camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                   : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' 
                   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
                   : camion?.estado === 'EN_PROCESO'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
               }`}>
-                {camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL' ? 'CERRADO PARCIAL' : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' ? 'FINALIZADO' : camion?.estado === 'EN_PROCESO' ? 'EN PROCESO' : 'PENDIENTE'}
+                {camion?.estado === 'CERRADO_PARCIAL' || camion?.estado === 'FINALIZADO_PARCIAL' ? (
+                  <>
+                    <Clock className="w-3 h-3 text-amber-400" />
+                    <span>FINALIZADO PARCIAL</span>
+                  </>
+                ) : camion?.estado === 'FINALIZADO' || camion?.estado === 'CERRADO' ? (
+                  'FINALIZADO'
+                ) : camion?.estado === 'EN_PROCESO' ? (
+                  'EN PROCESO'
+                ) : (
+                  'PENDIENTE'
+                )}
               </span>
             </div>
             <p className="text-[11px] text-sky-400/80 font-medium truncate max-w-[200px]">

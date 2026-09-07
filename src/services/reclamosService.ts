@@ -222,6 +222,32 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         if (reclamo) {
           try {
             await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
+            await supabase.from('reclamos_magma').delete().eq('nae_id', camion.id);
+            if (camion.numero_nae) {
+              await supabase.from('reclamos_magma').delete().eq('nae_numero', camion.numero_nae.trim());
+            }
+          } catch (e) {}
+          delete updatedLocalMap[reclamo.id];
+          delete updatedLocalMap[`rec_${camion.id}`];
+          if (camion.numero_nae) {
+            Object.keys(updatedLocalMap).forEach(k => {
+              if (updatedLocalMap[k]?.nae_numero === camion.numero_nae.trim()) {
+                delete updatedLocalMap[k];
+              }
+            });
+          }
+        }
+        continue;
+      }
+
+      const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
+
+      // Si de lo auditado no resultan discrepancias monetarias ni de SKUs, asegurar borrado
+      if (disc.cantSkusAfectados === 0 && disc.totalMontoReclamado === 0) {
+        if (reclamo) {
+          try {
+            await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
+            await supabase.from('reclamos_magma').delete().eq('nae_id', camion.id);
           } catch (e) {}
           delete updatedLocalMap[reclamo.id];
           delete updatedLocalMap[`rec_${camion.id}`];
@@ -229,22 +255,18 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         continue;
       }
 
-      const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
-
       if (reclamo) {
-        // Actualizar métricas del reclamo existente si estaba PENDIENTE o con 0 skus
-        if (reclamo.estado === 'PENDIENTE' || !reclamo.cant_skus_afectados || reclamo.cant_skus_afectados === 0 || reclamo.monto_total_reclamado === 0) {
-          reclamo = {
-            ...reclamo,
-            monto_total_reclamado: disc.totalMontoReclamado,
-            cant_skus_afectados: disc.cantSkusAfectados > 0 ? disc.cantSkusAfectados : itemsList.length,
-            cant_unidades_afectadas: disc.cantUnidadesAfectadas,
-            updated_at: new Date().toISOString()
-          };
-          try {
-            await supabase.from('reclamos_magma').upsert([reclamo], { onConflict: 'id' });
-          } catch (e) {}
-        }
+        // SIEMPRE recalcular métricas del reclamo existente para reflejar el cierre actual (sea parcial o total)
+        reclamo = {
+          ...reclamo,
+          monto_total_reclamado: disc.totalMontoReclamado,
+          cant_skus_afectados: disc.cantSkusAfectados,
+          cant_unidades_afectadas: disc.cantUnidadesAfectadas,
+          updated_at: new Date().toISOString()
+        };
+        try {
+          await supabase.from('reclamos_magma').upsert([reclamo], { onConflict: 'id' });
+        } catch (e) {}
         resultReclamos.push(reclamo);
         updatedLocalMap[reclamo.id] = reclamo;
         continue;
@@ -262,7 +284,7 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           tienda_nombre: camion.tienda_nombre,
           estado: 'PENDIENTE',
           monto_total_reclamado: disc.totalMontoReclamado,
-          cant_skus_afectados: disc.cantSkusAfectados > 0 ? disc.cantSkusAfectados : itemsList.length,
+          cant_skus_afectados: disc.cantSkusAfectados,
           cant_unidades_afectadas: disc.cantUnidadesAfectadas,
           fecha_cierre_auditoria: fechaCierre,
           created_at: new Date().toISOString(),

@@ -52,3 +52,12 @@
 .animate-slide-left {
   animation: slideLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Reglas Globales de Impresión */
+@media print {
+  @page {
+    size: portrait;
+    margin: 10mm 8mm;
+  }
+}
+

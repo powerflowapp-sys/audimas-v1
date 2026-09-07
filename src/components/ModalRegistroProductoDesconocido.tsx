@@ -20,7 +20,9 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
   onConfirm,
   onCancel
 }) => {
-  const [cantidad, setCantidad] = useState<number>(1);
+  const [cantidadInput, setCantidadInput] = useState<string>('');
+  const parsedCantidad = parseInt(cantidadInput, 10);
+  const numericCantidad = isNaN(parsedCantidad) ? 0 : parsedCantidad;
 
   const [fotoUpcFile, setFotoUpcFile] = useState<File | null>(null);
   const [fotoUpcPreview, setFotoUpcPreview] = useState<string | null>(null);
@@ -49,11 +51,11 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
     }
   };
 
-  const isFormValid = fotoUpcFile !== null && fotoFrenteFile !== null && cantidad >= 1;
+  const isFormValid = fotoUpcFile !== null && fotoFrenteFile !== null && numericCantidad > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid || !fotoUpcFile || !fotoFrenteFile) return;
+    if (!isFormValid || numericCantidad <= 0 || !fotoUpcFile || !fotoFrenteFile) return;
 
     setIsSubmitting(true);
     setErrorMsg(null);
@@ -71,7 +73,7 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
 
       onConfirm({
         upc,
-        cantidad,
+        cantidad: numericCantidad,
         fotoUpcUrl: urlUpc,
         fotoFrenteUrl: urlFrente
       });
@@ -81,6 +83,7 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
       setIsSubmitting(false);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -229,23 +232,29 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setCantidad((prev) => Math.max(1, prev - 1))}
-                disabled={isSubmitting || cantidad <= 1}
+                onClick={() => setCantidadInput(String(Math.max(1, numericCantidad - 1)))}
+                disabled={isSubmitting || numericCantidad <= 1}
                 className="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 font-bold disabled:opacity-40 transition-colors"
               >
                 -
               </button>
               <input
-                type="number"
-                min="1"
-                value={cantidad}
-                onChange={(e) => setCantidad(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-16 text-center font-mono font-bold text-lg bg-slate-900 border border-slate-700 text-amber-400 rounded-lg py-1 focus:outline-none focus:border-amber-500"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="0"
+                value={cantidadInput}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9]/g, '');
+                  setCantidadInput(val);
+                }}
+                className="w-16 text-center font-mono font-bold text-lg bg-slate-900 border border-slate-700 text-amber-400 placeholder:text-slate-600 rounded-lg py-1 focus:outline-none focus:border-amber-500"
                 disabled={isSubmitting}
               />
               <button
                 type="button"
-                onClick={() => setCantidad((prev) => prev + 1)}
+                onClick={() => setCantidadInput(String(numericCantidad + 1))}
                 disabled={isSubmitting}
                 className="w-9 h-9 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 font-bold transition-colors"
               >
@@ -253,6 +262,7 @@ export const ModalRegistroProductoDesconocido: React.FC<ModalRegistroProductoDes
               </button>
             </div>
           </div>
+
 
           {errorMsg && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 font-medium">

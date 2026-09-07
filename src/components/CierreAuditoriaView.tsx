@@ -20,9 +20,12 @@ import {
   User,
   RotateCcw,
   PackageX,
-  Check
+  Check,
+  WifiOff
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+
 import { 
   calcularResumenAuditoria, 
   fetchProductividadColaboradores, 
@@ -125,7 +128,9 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
   onNaeClosed
 }) => {
   const [camion, setCamion] = useState<CamionNAE | null>(null);
+  const { isOnline } = useNetworkStatus();
   const [items, setItems] = useState<AuditoriaItem[]>([]);
+
   const [productividad, setProductividad] = useState<ProductividadColaborador[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [filterTab, setFilterTab] = useState<'TODOS' | 'DIFERENCIAS' | 'NO_CONTADOS' | 'AGOTADOS' | 'DANADOS'>('DIFERENCIAS');
@@ -495,7 +500,17 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                   'PENDIENTE'
                 )}
               </span>
+
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1 ${
+                !isOnline
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${!isOnline ? 'bg-rose-400 animate-ping' : 'bg-emerald-400 animate-ping'}`} />
+                <span>{!isOnline ? '🔴 SIN CONEXIÓN' : '🟢 EN VIVO'}</span>
+              </span>
             </div>
+
             <p className="text-[11px] text-sky-400/80 font-medium truncate max-w-[200px]">
               {camion?.tienda_codigo} - {camion?.tienda_nombre}
             </p>
@@ -945,8 +960,9 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex items-center gap-2">
           <button
             type="button"
+            disabled={!isOnline}
             onClick={() => setIsConfirmPartialCloseOpen(true)}
-            className="px-4 py-2.5 bg-[#1a1202]/95 hover:bg-amber-950/90 hover:text-amber-200 border border-amber-500/60 text-amber-300 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-amber-950/50 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            className="px-4 py-2.5 bg-[#1a1202]/95 hover:bg-amber-950/90 hover:text-amber-200 border border-amber-500/60 text-amber-300 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-amber-950/50 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Clock className="w-4 h-4 text-amber-400" />
             <span>Finalizar Parcial</span>
@@ -954,12 +970,14 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
 
           <button
             type="button"
+            disabled={!isOnline}
             onClick={() => setIsConfirmCloseOpen(true)}
-            className="px-4 py-2.5 bg-slate-900/95 hover:bg-red-950/80 hover:text-red-200 hover:border-red-400 border border-red-500/50 text-red-300 font-['Chakra_Petch'] font-semibold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-red-950/40 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+            className="px-4 py-2.5 bg-slate-900/95 hover:bg-red-950/80 hover:text-red-200 hover:border-red-400 border border-red-500/50 text-red-300 font-['Chakra_Petch'] font-semibold text-xs uppercase tracking-wider rounded-full shadow-lg shadow-red-950/40 backdrop-blur-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ShieldCheck className="w-4 h-4 text-red-400" />
             <span>Finalizar Auditoría</span>
           </button>
+
         </div>
       )}
 
@@ -1153,6 +1171,32 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
         showScan={false}
         onHome={onHome}
       />
+
+      {/* CORTINA / OVERLAY PREVENTIVO DE CONEXIÓN PERDIDA EN DEPÓSITO */}
+      {!isOnline && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-rose-500/50 rounded-3xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 bg-rose-500/20 border border-rose-500/40 rounded-full flex items-center justify-center mx-auto text-rose-400 animate-bounce">
+              <WifiOff className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-white font-['Chakra_Petch'] uppercase tracking-wide">
+                ⚠️ Conexión Perdida en Depósito
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                El escaneo se encuentra en pausa preventiva para no perder registros. Por favor, acércate a una zona con cobertura Wi-Fi.
+              </p>
+            </div>
+            <div className="pt-2">
+              <span className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-full text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                <span>Esperando re-conexión de red...</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

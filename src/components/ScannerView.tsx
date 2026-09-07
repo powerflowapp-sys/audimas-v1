@@ -31,7 +31,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { useAuditoriaRealtime } from '../hooks/useAuditoriaRealtime';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { feedbackService, ScanFeedbackType } from '../utils/feedback';
+
 import { matchBarcode, sanitizeBarcode } from '../utils/barcodeUtils';
 import { CameraScannerModal } from './CameraScannerModal';
 import { formatNumber, isItemPesable, getUomLabel, resolverUnidadMedidaItem, calcularUnidadesFisicasItem, getIniciales } from '../utils/formatUtils';
@@ -129,8 +131,10 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   const [isUserModalOpen, setIsUserModalOpen] = useState<boolean>(false);
   const [tempUser, setTempUser] = useState<string>(collaborator);
 
-  // Hook Realtime
+  // Hook Realtime y Estado de Conectividad Network
   const { items, isRealtimeConnected, toastMessage, setToastMessage, refreshItems } = useAuditoriaRealtime(naeId);
+  const { isOnline } = useNetworkStatus();
+
 
   // Estado del Escaneo y Búsqueda
   const [scanInput, setScanInput] = useState<string>('');
@@ -716,7 +720,8 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
   // Manejador del Escaneo Inicial con Coincidencia Elástica y Doble Validación
   const handleExecuteScan = async (upcToScan: string) => {
     const cleanUpc = sanitizeBarcode(upcToScan);
-    if (!cleanUpc || isScanning) return;
+    if (!cleanUpc || isScanning || !isOnline) return;
+
 
     // Buscar si el producto ya está en la lista de auditoría del camión (coincidencia elástica de UPC / EAN / SKU)
     const itemEnCamion = items.find(it => matchBarcode(cleanUpc, it.upc) || matchBarcode(cleanUpc, it.sku));
@@ -898,13 +903,18 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
                   NAE: {camion?.numero_nae || 'Cargando...'}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold flex items-center space-x-1 ${
-                  isRealtimeConnected 
+                  !isOnline
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                    : isRealtimeConnected 
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
                     : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-                  <span>{isRealtimeConnected ? '● En vivo' : 'Conectando'}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    !isOnline ? 'bg-rose-400 animate-ping' : isRealtimeConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
+                  }`} />
+                  <span>{!isOnline ? '🔴 SIN CONEXIÓN' : isRealtimeConnected ? '🟢 EN VIVO' : 'Conectando'}</span>
                 </span>
+
               </div>
               <p className="text-[11px] text-sky-400/80 font-medium truncate max-w-[190px]">
                 {camion?.tienda_nombre || 'Tienda Retail'}
@@ -1543,7 +1553,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           {/* DEBAJO (SEGUNDO BLOQUE): CÁPSULA DE NAVEGACIÓN CON 3 ELEMENTOS SIMÉTRICOS */}
           <BottomNavCapsule
             onBack={handleBack}
-            onScan={!isReadOnlyMode ? () => setIsCameraOpen(true) : undefined}
+            onScan={!isReadOnlyMode && isOnline ? () => setIsCameraOpen(true) : undefined}
             onHome={handleHome}
             className="pointer-events-auto bg-[#061833]/95 backdrop-blur-md border border-sky-500/30 rounded-full px-4 py-2 flex items-center justify-center space-x-3 shadow-2xl animate-fade-in font-sans select-none"
           />
@@ -1600,7 +1610,33 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
           onCancel={() => setIsModalDesconocidoOpen(false)}
         />
       )}
+
+      {/* CORTINA / OVERLAY PREVENTIVO DE CONEXIÓN PERDIDA EN DEPÓSITO */}
+      {!isOnline && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border-2 border-rose-500/50 rounded-3xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 bg-rose-500/20 border border-rose-500/40 rounded-full flex items-center justify-center mx-auto text-rose-400 animate-bounce">
+              <WifiOff className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-white font-['Chakra_Petch'] uppercase tracking-wide">
+                ⚠️ Conexión Perdida en Depósito
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                El escaneo se encuentra en pausa preventiva para no perder registros. Por favor, acércate a una zona con cobertura Wi-Fi.
+              </p>
+            </div>
+            <div className="pt-2">
+              <span className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-full text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                <span>Esperando re-conexión de red...</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
 

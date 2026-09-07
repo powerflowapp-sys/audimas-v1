@@ -40,6 +40,87 @@ const MOTIVO_ORDER: Record<string, number> = {
 };
 
 /**
+ * Rescate dinámico de costos desde maestro_productos V8 para cualquier ítem sin costo (costoUnitarioRef === 0).
+ * Consulta maestro_productos por SKU o UPC (WHERE sku = item.sku OR upc = item.upc).
+ * Asigna el costo_unitario o precio_retail rescatado en memoria y actualiza auditoria_items en Supabase.
+ */
+export const rescatarCostosDesdeMaestroV8 = async (
+  items: AuditoriaItem[]
+): Promise<AuditoriaItem[]> => {
+  if (!items || items.length === 0) return items;
+
+  // Filtrar ítems que no tengan costo asignado (> 0)
+  const sinCosto = items.filter(it => {
+    const cost = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+    return cost === 0;
+  });
+
+  if (sinCosto.length === 0) return items;
+
+  try {
+    const { data: maestroData, error } = await supabase
+      .from('maestro_productos')
+      .select('sku, upc, costo_unitario, precio_retail');
+
+    if (error || !maestroData || maestroData.length === 0) {
+      return items;
+    }
+
+    const maestroCostMap = new Map<string, number>();
+    maestroData.forEach(m => {
+      const c = Number(m.costo_unitario) || Number(m.precio_retail) || 0;
+      if (c > 0) {
+        if (m.sku) maestroCostMap.set(m.sku.trim().toUpperCase(), c);
+        if (m.upc) maestroCostMap.set(m.upc.trim().toUpperCase(), c);
+      }
+    });
+
+    const itemsToPersist: Array<{ id: string; costo_unitario: number; costo_unitario_aplicado: number }> = [];
+
+    items.forEach(it => {
+      const costActual = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+      if (costActual === 0) {
+        const cleanSku = (it.sku || '').trim().toUpperCase();
+        const cleanUpc = (it.upc || '').trim().toUpperCase();
+        const rescatedCost = maestroCostMap.get(cleanSku) || maestroCostMap.get(cleanUpc);
+
+        if (rescatedCost && rescatedCost > 0) {
+          it.costo_unitario = rescatedCost;
+          it.costo_unitario_aplicado = rescatedCost;
+          if (it.id) {
+            itemsToPersist.push({
+              id: it.id,
+              costo_unitario: rescatedCost,
+              costo_unitario_aplicado: rescatedCost
+            });
+          }
+        }
+      }
+    });
+
+    // Actualizar asincrónicamente en Supabase auditoria_items para persisitir los costos rescatados
+    if (itemsToPersist.length > 0) {
+      Promise.all(
+        itemsToPersist.map(itemUpdate =>
+          supabase
+            .from('auditoria_items')
+            .update({
+              costo_unitario: itemUpdate.costo_unitario,
+              costo_unitario_aplicado: itemUpdate.costo_unitario_aplicado,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', itemUpdate.id)
+        )
+      ).catch(e => console.warn('⚠️ Error actualizando costos rescatados en Supabase:', e));
+    }
+  } catch (err) {
+    console.warn('⚠️ Excepción al rescatar costos desde maestro_productos:', err);
+  }
+
+  return items;
+};
+
+/**
  * Calcula el resumen de discrepancias reclamables para un camión (Faltantes, Sobrantes, No Facturados, Dañados)
  * Si esParcial = true, excluye del reclamo los artículos sin conteo ni rotura.
  */
@@ -217,7 +298,8 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         .select('*')
         .eq('nae_id', camion.id);
 
-      const itemsList = items || [];
+      let itemsList = items || [];
+      itemsList = await rescatarCostosDesdeMaestroV8(itemsList);
       const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
 
       // Si el camión es 100% conforme (o en parcial no tiene desvíos sobre lo auditado), OMITIR reclamo Magma
@@ -375,6 +457,7 @@ export const exportarPlanillaReclamoMagmaExcel = async (
   const enrichedList = await enriquecerCamionesConLogsParciales([camion]);
   camion = enrichedList[0] || camion;
 
+  await rescatarCostosDesdeMaestroV8(items);
   const disc = calcularDiscrepanciasReclamo(items, camion);
   const activeKeys = selectedKeys || reclamo.items_seleccionados;
 

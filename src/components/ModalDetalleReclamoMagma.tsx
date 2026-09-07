@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Copy, Download, Search, Check, FileSpreadsheet, Save, CheckSquare, Square } from 'lucide-react';
 import { AuditoriaItem, CamionNAE, ReclamoMagma, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
-import { calcularDiscrepanciasReclamo, exportarPlanillaReclamoMagmaExcel, updateReclamoMagma } from '../services/reclamosService';
+import { calcularDiscrepanciasReclamo, exportarPlanillaReclamoMagmaExcel, updateReclamoMagma, rescatarCostosDesdeMaestroV8 } from '../services/reclamosService';
 import { enriquecerCamionesConLogsParciales } from '../services/reportService';
 import { getUomLabel } from '../utils/formatUtils';
 
@@ -70,7 +70,8 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
           .eq('nae_id', reclamo.nae_id);
 
         if (isMounted) {
-          const loadedItems = data || [];
+          let loadedItems = data || [];
+          loadedItems = await rescatarCostosDesdeMaestroV8(loadedItems);
           setItems(loadedItems);
           setCamionObj(finalCamion);
 

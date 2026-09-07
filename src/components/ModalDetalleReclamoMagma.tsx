@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Copy, Download, Search, Check, FileSpreadsheet, Save, CheckSquare, Square } from 'lucide-react';
 import { AuditoriaItem, CamionNAE, ReclamoMagma, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
@@ -97,15 +97,49 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  const activeCamion: CamionNAE = camionObj || camionInput || {
-    id: reclamo.nae_id,
-    numero_nae: reclamo.nae_numero,
-    tienda_codigo: reclamo.tienda_codigo,
-    tienda_nombre: reclamo.tienda_nombre,
-    estado: 'CERRADO'
-  };
+  const activeCamion: CamionNAE = useMemo(() => {
+    const base = camionObj || camionInput || {
+      id: reclamo.nae_id,
+      numero_nae: reclamo.nae_numero,
+      tienda_codigo: reclamo.tienda_codigo,
+      tienda_nombre: reclamo.tienda_nombre,
+      estado: 'CERRADO'
+    };
 
-  const disc = calcularDiscrepanciasReclamo(items, activeCamion);
+    const isParcialDetected = isCamionCierreParcial(base) ||
+      Boolean(base.es_parcial) ||
+      base.tipo_cierre === 'PARCIAL' ||
+      base.has_log_parcial === true ||
+      (Boolean(reclamo.cant_skus_afectados) && reclamo.cant_skus_afectados! < 100 && items.length > 50);
+
+    if (isParcialDetected) {
+      return {
+        ...base,
+        es_parcial: true,
+        tipo_cierre: 'PARCIAL' as const,
+        has_log_parcial: true
+      };
+    }
+    return base;
+  }, [camionObj, camionInput, reclamo, items.length]);
+
+  const esParcialEfectivo = isCamionCierreParcial(activeCamion);
+
+  // Filtrado obligatorio de ítems auditados si es cierre parcial (omite uEsc === 0 && bEsc === 0 && cantDan === 0)
+  const scopedItemsModal = useMemo(() => {
+    if (!esParcialEfectivo) return items;
+    return items.filter(it => {
+      const uEsc = Number(it.unidades_escaneadas || 0);
+      const bEsc = Number(it.bultos_escaneados || 0);
+      const cantDan = Number(it.cantidad_danada || 0);
+      const isSobrante = Boolean(it.es_sobrante_no_facturado) || (it.depto_codigo && parseInt(it.depto_codigo, 10) === 999);
+      return uEsc > 0 || bEsc > 0 || cantDan > 0 || isSobrante;
+    });
+  }, [items, esParcialEfectivo]);
+
+  const disc = useMemo(() => {
+    return calcularDiscrepanciasReclamo(scopedItemsModal, activeCamion, esParcialEfectivo);
+  }, [scopedItemsModal, activeCamion, esParcialEfectivo]);
 
   const filteredDiscrepancias = disc.itemsDiscrepantes.filter(d => {
     if (!searchQuery.trim()) return true;
@@ -172,7 +206,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
 
   const handleExport = async () => {
     const keysArray = Array.from(selectedKeys);
-    await exportarPlanillaReclamoMagmaExcel(reclamo, items, keysArray, activeCamion);
+    await exportarPlanillaReclamoMagmaExcel(reclamo, scopedItemsModal, keysArray, activeCamion);
     onExportExcel();
   };
 

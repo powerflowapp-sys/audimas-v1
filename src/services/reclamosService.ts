@@ -46,8 +46,9 @@ const MOTIVO_ORDER: Record<string, number> = {
 export const calcularDiscrepanciasReclamo = (
   items: AuditoriaItem[], 
   camion: CamionNAE,
-  esParcial: boolean = false
+  esParcialInput?: boolean
 ) => {
+  const esParcial = esParcialInput !== undefined ? esParcialInput : isCamionCierreParcial(camion);
   let totalMontoReclamado = 0;
   let cantUnidadesAfectadas = 0;
   const skuSet = new Set<string>();

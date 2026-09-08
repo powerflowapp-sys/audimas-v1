@@ -11,6 +11,7 @@ import {
   Building2, 
   FileSpreadsheet, 
   X,
+  ChevronLeft,
   ChevronRight,
   Eye,
   Info,
@@ -53,6 +54,42 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedDepto, setSelectedDepto] = useState<string>('TODOS');
   const [soloAgotados, setSoloAgotados] = useState<boolean>(false);
+
+  // Scroll PC para el carrusel de departamentos
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState<boolean>(false);
+  const [canScrollRight, setCanScrollRight] = useState<boolean>(false);
+
+  const updateCarouselScrollState = () => {
+    const el = carouselRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 4);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+  };
+
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const amount = direction === 'left' ? -200 : 200;
+      carouselRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    updateCarouselScrollState();
+    const el = carouselRef.current;
+    if (!el) return;
+    const handleScroll = () => updateCarouselScrollState();
+    const handleResize = () => updateCarouselScrollState();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleResize);
+    const timer = setTimeout(updateCarouselScrollState, 100);
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [items, selectedTruck]);
 
   // Ocultamiento visual local exclusivo en Camiones+ (no borra de Supabase)
   const [hiddenTruckIds, setHiddenTruckIds] = useState<string[]>(() => {
@@ -660,55 +697,108 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 )}
               </div>
 
-              {/* Carrusel Horizontal de Departamentos (Scrollable X) */}
-              <div className="space-y-1">
-                <div className="overflow-x-auto flex items-center space-x-2 pb-1.5 pt-0.5 scrollbar-thin scrollbar-thumb-sky-500/30 select-none">
+              {/* Carrusel Horizontal de Departamentos (Scrollable X con Flechas PC y Swipe Móvil) */}
+              <div className="relative group/carousel">
+                {/* Botón Flecha Izquierda para PC */}
+                {canScrollLeft && (
+                  <button
+                    type="button"
+                    onClick={() => scrollCarousel('left')}
+                    className="absolute -left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-[#041021]/95 hover:bg-sky-900 text-sky-300 hover:text-white border border-sky-400/50 rounded-full flex items-center justify-center shadow-lg shadow-black/80 cursor-pointer transition-all active:scale-90"
+                    title="Desplazar a la izquierda"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                )}
+
+                <div
+                  ref={carouselRef}
+                  onScroll={updateCarouselScrollState}
+                  className="overflow-x-auto touch-pan-x flex items-center space-x-2 pb-2 pt-1 scrollbar-thin scrollbar-thumb-sky-700/50 scrollbar-track-transparent select-none px-0.5"
+                >
                   {departamentosTabs.map((tab) => {
                     const isSelected = selectedDepto === tab.key;
                     return (
                       <button
                         key={tab.key}
-                        onClick={() => setSelectedDepto(tab.key)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1.5 shrink-0 border transition-all cursor-pointer ${
+                        onClick={() => {
+                          setSelectedDepto(tab.key);
+                          if (tab.agotadosCount === 0) {
+                            setSoloAgotados(false);
+                          }
+                        }}
+                        className={`min-w-[95px] p-2 rounded-xl flex flex-col items-center justify-center gap-1 shrink-0 border transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-sky-500/25 border-cyan-400 text-white shadow-md shadow-sky-950 scale-[1.02]'
                             : 'bg-[#030e1f] border-sky-500/30 text-slate-300 hover:bg-[#081f3d] hover:border-sky-400/50'
                         }`}
                       >
-                        <span>{tab.label}</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#020b18] text-sky-300 border border-sky-500/20">
-                          {tab.auditadosCount}/{tab.totalCount}
+                        {/* Fila superior: Nombre del departamento en negrita */}
+                        <span className="font-['Chakra_Petch'] font-black text-xs uppercase tracking-wider text-center truncate max-w-[110px]">
+                          {tab.label}
                         </span>
-                        {tab.agotadosCount > 0 && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-red-950/80 text-red-400 border border-red-500/40 flex items-center space-x-1 font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                            <span>{tab.agotadosCount}</span>
+
+                        {/* Fila inferior (en paralelo): Avance y Agotados */}
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[#020b18] text-sky-300 border border-sky-500/20">
+                            {tab.auditadosCount}/{tab.totalCount}
                           </span>
-                        )}
+                          {tab.agotadosCount > 0 && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-red-950/90 text-red-300 border border-red-500/50 flex items-center space-x-1 font-bold shadow-sm">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                              <span>{tab.agotadosCount}</span>
+                            </span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
                 </div>
+
+                {/* Botón Flecha Derecha para PC */}
+                {canScrollRight && (
+                  <button
+                    type="button"
+                    onClick={() => scrollCarousel('right')}
+                    className="absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 bg-[#041021]/95 hover:bg-sky-900 text-sky-300 hover:text-white border border-sky-400/50 rounded-full flex items-center justify-center shadow-lg shadow-black/80 cursor-pointer transition-all active:scale-90"
+                    title="Desplazar a la derecha"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {/* Botón de Alerta / Filtro de Agotados en Tránsito */}
-              {stats.agotadosCount > 0 && (
-                <button
-                  onClick={() => setSoloAgotados(!soloAgotados)}
-                  className={`w-full py-2.5 px-3 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center justify-center space-x-2 border transition-all cursor-pointer shadow-md active:scale-[0.99] ${
-                    soloAgotados
-                      ? 'bg-red-600 text-white border-red-400 shadow-red-950/50'
-                      : 'bg-red-950/30 text-red-400 border-red-500/50 hover:bg-red-950/50 hover:border-red-400'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                  <span>
-                    {soloAgotados
-                      ? `Mostrando solo los ${stats.agotadosCount} agotados (Toca para ver todos)`
-                      : `⚠️ Ver solo los ${stats.agotadosCount} agotados en tránsito`}
-                  </span>
-                </button>
-              )}
+              {/* Botón Dinámico de Alerta / Filtro de Agotados en Tránsito */}
+              {(() => {
+                const currentTab = departamentosTabs.find(t => t.key === selectedDepto) || departamentosTabs[0];
+                const count = currentTab ? currentTab.agotadosCount : 0;
+
+                if (count > 0) {
+                  return (
+                    <button
+                      onClick={() => setSoloAgotados(!soloAgotados)}
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center justify-center space-x-2 border transition-all cursor-pointer shadow-md active:scale-[0.99] ${
+                        soloAgotados
+                          ? 'bg-red-600 text-white border-red-400 shadow-red-950/50'
+                          : 'bg-red-950/30 text-red-400 border-red-500/50 hover:bg-red-950/50 hover:border-red-400'
+                      }`}
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      <span>
+                        {soloAgotados
+                          ? `Mostrando solo los ${count} agotados (Toca para ver todos)`
+                          : `⚠️ Ver solo los ${count} agotados en tránsito`}
+                      </span>
+                    </button>
+                  );
+                }
+
+                return (
+                  <div className="w-full py-2 px-3 rounded-xl text-xs font-['Chakra_Petch'] font-semibold uppercase tracking-wider flex items-center justify-center space-x-1.5 border border-slate-700/50 bg-[#020b18]/70 text-slate-400 select-none">
+                    <span>✅ Sin agotados en {selectedDepto === 'TODOS' ? 'este camión' : currentTab?.label || 'este dpto'}</span>
+                  </div>
+                );
+              })()}
 
             </div>
 
@@ -911,7 +1001,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Badges y Datos: Tipo de Carga, Total de Productos y Reporte AP */}
+                    {/* Badges y Datos: Tipo de Carga y Total de Productos */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                       {/* 1. Tipo de carga: Frío o Congelado */}
                       <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
@@ -922,12 +1012,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                       <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-sky-950/80 text-sky-300 border border-sky-500/30">
                         📦 {totalSkus > 0 ? `${totalSkus} SKUs` : 'Perecederos'}
                       </span>
-
-                      {cam.tiene_reporte_ap && (
-                        <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
-                          📊 REPORTE AP
-                        </span>
-                      )}
                     </div>
 
                     {/* Tienda y Fecha de finalización / arribo */}

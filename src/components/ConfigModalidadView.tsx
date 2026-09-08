@@ -144,7 +144,7 @@ export const ConfigModalidadView: React.FC<ConfigModalidadViewProps> = ({
     setIsSaving(true);
 
     try {
-      const isPending = !camion.fecha_inicio_auditoria || estUpper === 'PENDIENTE';
+      const isPending = !camion.fecha_inicio_auditoria || estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE';
       const now = new Date().toISOString();
 
       const updateData: Record<string, any> = {

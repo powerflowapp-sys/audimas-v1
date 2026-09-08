@@ -13,7 +13,8 @@ import {
   Tag,
   Home,
   Smartphone,
-  PieChart
+  PieChart,
+  Snowflake
 } from 'lucide-react';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 
@@ -28,6 +29,7 @@ interface SidebarDrawerProps {
   onGoHub?: () => void;
   onGoDashboard: () => void;
   onOpenDashboardGerencial?: () => void;
+  onOpenCamionesPlus?: () => void;
   onOpenCargarCamion: () => void;
   onOpenCatalogoMaestro: () => void;
   onOpenHistorialReportes?: () => void;
@@ -49,6 +51,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onGoHub,
   onGoDashboard,
   onOpenDashboardGerencial,
+  onOpenCamionesPlus,
   onOpenCargarCamion,
   onOpenCatalogoMaestro,
   onOpenHistorialReportes,
@@ -93,6 +96,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
   const isDashboardActive = currentView === 'LIST';
   const isDashboardGerencialActive = currentView === 'DASHBOARD';
+  const isCamionesPlusActive = currentView === 'CAMIONES_PLUS';
   const isHistorialActive = currentView === 'HISTORIAL';
   const isReclamosActive = currentView === 'RECLAMOS_MAGMA';
   const isBandeMasActive = currentView === 'BANDEMAS';
@@ -187,6 +191,28 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               >
                 <Home className="w-4 h-4 text-sky-400 shrink-0" />
                 <span>Camiones</span>
+              </button>
+
+              {/* [ ❄️ Camiones+ ] */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenCamionesPlus) onOpenCamionesPlus();
+                }}
+                className={`w-full text-xs font-semibold px-3 py-2 transition-all text-left cursor-pointer flex items-center space-x-3 rounded-xl ${
+                  isCamionesPlusActive
+                    ? 'bg-[#042852] text-white font-bold border-l-4 border-cyan-400 shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-cyan-500/10'
+                }`}
+              >
+                <Snowflake className="w-4 h-4 text-cyan-400 shrink-0" />
+                <div className="flex items-center justify-between flex-1">
+                  <span>Camiones+</span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
+                    PERECEDEROS
+                  </span>
+                </div>
               </button>
 
               {/* [ 📊 Dashboard Gerencial ] */}

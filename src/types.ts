@@ -16,7 +16,8 @@ export interface CamionNAE {
   tienda_codigo: string;
   tienda_nombre: string;
   fecha_arribo?: string;
-  estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO' | 'CERRADO_PARCIAL' | 'FINALIZADO_PARCIAL';
+  estado: 'PENDIENTE' | 'EN_PROCESO' | 'FINALIZADO' | 'CERRADO' | 'CERRADO_PARCIAL' | 'FINALIZADO_PARCIAL' | 'EN_CONSULTA' | 'DISPONIBLE';
+  origen_carga?: 'CAMIONES_PLUS' | 'AUDIMAS';
   es_parcial?: boolean;
   tipo_cierre?: 'TOTAL' | 'PARCIAL';
   has_log_parcial?: boolean;

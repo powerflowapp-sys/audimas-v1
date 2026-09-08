@@ -95,7 +95,7 @@ export const ModalModalidadAuditoria: React.FC<ModalModalidadAuditoriaProps> = (
         .single();
 
       const estUpper = (currentTruck?.estado || '').trim().toUpperCase();
-      const isPending = !currentTruck?.fecha_inicio_auditoria || estUpper === 'PENDIENTE';
+      const isPending = !currentTruck?.fecha_inicio_auditoria || estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE';
       const now = new Date().toISOString();
 
       const updateData: Record<string, any> = {

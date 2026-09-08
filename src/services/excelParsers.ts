@@ -1668,9 +1668,20 @@ export const parseCamionManifiestoExcel = async (
 export const uploadCamionManifiesto = async (
   preview: CamionManifiestoPreview,
   onProgress?: ProgressCallback,
-  options?: { overwrite?: boolean; overwriteNaeId?: string; usuario_carga?: string }
-): Promise<{ success: boolean; nae_id: string; totalItems: number }> => {
+  options?: { 
+    overwrite?: boolean; 
+    overwriteNaeId?: string; 
+    usuario_carga?: string;
+    isCamionesPlus?: boolean;
+    origen_carga?: 'CAMIONES_PLUS' | 'AUDIMAS';
+    estado?: 'PENDIENTE' | 'EN_CONSULTA' | 'DISPONIBLE';
+  }
+): Promise<{ success: boolean; nae_id: string; totalItems: number; overwrittenFromCamionesPlus?: boolean }> => {
   const { numero_nae, tienda_codigo, tienda_nombre, tiene_reporte_ap, monto_total_esperado, items } = preview;
+  const isFromCamionesPlusRequest = Boolean(options?.isCamionesPlus || options?.origen_carga === 'CAMIONES_PLUS');
+
+  let naeId: string = '';
+  let overwrittenFromCamionesPlus = false;
 
   if (onProgress) {
     onProgress(5, 0, items.length, 'Registrando la cabecera del camión NAE...');
@@ -1686,10 +1697,10 @@ export const uploadCamionManifiesto = async (
     }
     await supabase.from('camiones_nae').delete().eq('numero_nae', numero_nae);
   } else {
-    // 1. Control Estricto de Camiones NAE Duplicados
+    // 1. Control Estricto de Camiones NAE Duplicados y Sobrescritura Inteligente
     const { data: existingNae, error: fetchError } = await supabase
       .from('camiones_nae')
-      .select('id, estado, numero_nae')
+      .select('id, estado, numero_nae, origen_carga, tiene_reporte_ap, monto_total_esperado, tienda_codigo, tienda_nombre')
       .eq('numero_nae', numero_nae)
       .maybeSingle();
 
@@ -1699,9 +1710,78 @@ export const uploadCamionManifiesto = async (
 
     if (existingNae) {
       const estUpper = (existingNae.estado || '').trim().toUpperCase();
+      const existingIsCamionesPlus = existingNae.origen_carga === 'CAMIONES_PLUS' || estUpper === 'EN_CONSULTA';
+
       if (estUpper === 'FINALIZADO' || estUpper === 'CERRADO') {
         throw new Error(`⚠️ El camión NAE #${numero_nae} ya fue auditado y cerrado con anterioridad.`);
-      } else {
+      }
+
+      // CASO A: Se sube desde AUDIMAS un camión que había sido precargado en CAMIONES+
+      if (existingIsCamionesPlus && !isFromCamionesPlusRequest) {
+        if (onProgress) {
+          onProgress(10, 0, items.length, 'Sincronizando y actualizando datos definitivos sobre precarga de Camiones+...');
+        }
+        // Sobrescritura inteligente:
+        // 1. Actualiza estado a DISPONIBLE para habilitar el escáner y la auditoría física en AudiMAS.
+        const { error: updateError } = await supabase
+          .from('camiones_nae')
+          .update({
+            tienda_codigo: tienda_codigo || existingNae.tienda_codigo,
+            tienda_nombre: tienda_nombre || existingNae.tienda_nombre,
+            fecha_arribo: new Date().toISOString().split('T')[0],
+            estado: 'DISPONIBLE',
+            tiene_reporte_ap: tiene_reporte_ap ?? existingNae.tiene_reporte_ap ?? false,
+            monto_total_esperado: monto_total_esperado || existingNae.monto_total_esperado || 0,
+            modo_auditoria: 'TOTAL',
+            usuario_carga: options?.usuario_carga || 'OPERADOR 1'
+          })
+          .eq('id', existingNae.id);
+
+        if (updateError) {
+          throw new Error(`Error al actualizar estado a DISPONIBLE: ${updateError.message}`);
+        }
+
+        // 2. Sobrescribe la lista de ítems con los datos definitivos del nuevo archivo
+        const { error: delItemsError } = await supabase
+          .from('auditoria_items')
+          .delete()
+          .eq('nae_id', existingNae.id);
+
+        if (delItemsError) {
+          throw new Error(`Error al limpiar ítems previos para sobrescritura: ${delItemsError.message}`);
+        }
+
+        naeId = existingNae.id;
+        overwrittenFromCamionesPlus = true;
+      } 
+      // CASO B: Se sube desde CAMIONES+ y ya existía en estado EN_CONSULTA (re-precarga / actualización)
+      else if (isFromCamionesPlusRequest && estUpper === 'EN_CONSULTA') {
+        if (onProgress) {
+          onProgress(10, 0, items.length, 'Actualizando ítems precargados en Camiones+...');
+        }
+        await supabase
+          .from('camiones_nae')
+          .update({
+            tienda_codigo: tienda_codigo || existingNae.tienda_codigo,
+            tienda_nombre: tienda_nombre || existingNae.tienda_nombre,
+            fecha_arribo: new Date().toISOString().split('T')[0],
+            tiene_reporte_ap: tiene_reporte_ap ?? existingNae.tiene_reporte_ap ?? false,
+            monto_total_esperado: monto_total_esperado || existingNae.monto_total_esperado || 0,
+            usuario_carga: options?.usuario_carga || 'OPERADOR 1',
+            origen_carga: 'CAMIONES_PLUS',
+            estado: 'EN_CONSULTA'
+          })
+          .eq('id', existingNae.id);
+
+        await supabase
+          .from('auditoria_items')
+          .delete()
+          .eq('nae_id', existingNae.id);
+
+        naeId = existingNae.id;
+      } 
+      // CASO C: Duplicado convencional en AudiMAS
+      else {
         const err: any = new Error(`DUPLICADO_PENDIENTE:${existingNae.id}:${existingNae.estado}:${numero_nae}`);
         err.existingNaeId = existingNae.id;
         err.existingEstado = existingNae.estado;
@@ -1710,29 +1790,40 @@ export const uploadCamionManifiesto = async (
     }
   }
 
-  // 2. Insertar nueva cabecera del camión NAE
-  const { data: newNae, error: insertNaeError } = await supabase
-    .from('camiones_nae')
-    .insert({
-      numero_nae,
-      tienda_codigo,
-      tienda_nombre,
-      fecha_arribo: new Date().toISOString().split('T')[0],
-      estado: 'PENDIENTE',
-      fecha_inicio_auditoria: null,
-      tiene_reporte_ap: tiene_reporte_ap || false,
-      monto_total_esperado: monto_total_esperado || 0,
-      modo_auditoria: 'TOTAL',
-      usuario_carga: options?.usuario_carga || 'OPERADOR 1'
-    })
-    .select('id')
-    .single();
+  // 2. Si no fue sobrescritura sobre registro existente, insertar nueva cabecera
+  if (!naeId) {
+    const estadoInicial = isFromCamionesPlusRequest 
+      ? 'EN_CONSULTA' 
+      : (options?.estado || 'PENDIENTE');
 
-  if (insertNaeError || !newNae) {
-    throw new Error(`Error al crear la cabecera del camión NAE: ${insertNaeError?.message}`);
+    const origenCarga = isFromCamionesPlusRequest 
+      ? 'CAMIONES_PLUS' 
+      : (options?.origen_carga || 'AUDIMAS');
+
+    const { data: newNae, error: insertNaeError } = await supabase
+      .from('camiones_nae')
+      .insert({
+        numero_nae,
+        tienda_codigo,
+        tienda_nombre,
+        fecha_arribo: new Date().toISOString().split('T')[0],
+        estado: estadoInicial,
+        origen_carga: origenCarga,
+        fecha_inicio_auditoria: null,
+        tiene_reporte_ap: tiene_reporte_ap || false,
+        monto_total_esperado: monto_total_esperado || 0,
+        modo_auditoria: 'TOTAL',
+        usuario_carga: options?.usuario_carga || 'OPERADOR 1'
+      })
+      .select('id')
+      .single();
+
+    if (insertNaeError || !newNae) {
+      throw new Error(`Error al crear la cabecera del camión NAE: ${insertNaeError?.message}`);
+    }
+
+    naeId = newNae.id;
   }
-
-  const naeId = newNae.id;
 
   // 3. Preparar los items vinculados al nae_id sanitizados para DB
   const dbItems = items.map(item => {
@@ -1794,7 +1885,7 @@ export const uploadCamionManifiesto = async (
     }
   }
 
-  return { success: true, nae_id: naeId, totalItems: processed };
+  return { success: true, nae_id: naeId, totalItems: processed, overwrittenFromCamionesPlus };
 };
 
 // =============================================================================

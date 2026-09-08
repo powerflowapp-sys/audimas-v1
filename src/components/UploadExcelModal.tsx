@@ -139,7 +139,11 @@ export const UploadExcelModal: React.FC<UploadExcelModalProps> = ({
           setProgressText(msg);
         });
 
-        setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} cargado exitosamente con ${res.totalItems} ítems!`);
+        if (res.overwrittenFromCamionesPlus) {
+          setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} sincronizado desde Camiones+ y habilitado para auditoría con ${res.totalItems} ítems definitivos!`);
+        } else {
+          setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} cargado exitosamente con ${res.totalItems} ítems!`);
+        }
         if (onSuccess) {
           onSuccess('NAE', { nae_id: res.nae_id, totalItems: res.totalItems });
         }

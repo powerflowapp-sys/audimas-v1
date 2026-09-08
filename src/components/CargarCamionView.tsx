@@ -295,7 +295,11 @@ export const CargarCamionView: React.FC<CargarCamionViewProps> = ({
 
       setDuplicateNaeInfo(null);
       setCreatedNaeId(res.nae_id);
-      setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} cargado exitosamente con ${res.totalItems} productos${camionPreview.tiene_reporte_ap ? ' y reporte AP valorizado' : ''}!`);
+      if (res.overwrittenFromCamionesPlus) {
+        setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} precargado en Camiones+ fue sincronizado y habilitado como DISPONIBLE para escaneo en AudiMAS con ${res.totalItems} productos definitivos!`);
+      } else {
+        setSuccessMessage(`¡Camión NAE ${camionPreview.numero_nae} cargado exitosamente con ${res.totalItems} productos${camionPreview.tiene_reporte_ap ? ' y reporte AP valorizado' : ''}!`);
+      }
       onSuccess(res.nae_id, res.totalItems);
     } catch (err: any) {
       const msg = err instanceof Error ? err.message : String(err);

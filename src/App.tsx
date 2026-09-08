@@ -58,11 +58,12 @@ import { ReclamosMagmaView } from './components/ReclamosMagmaView';
 import { DashboardView } from './components/DashboardView';
 import { OnboardingModal } from './components/OnboardingModal';
 import { SuperAdminView } from './components/SuperAdminView';
+import { CamionesPlusView } from './components/CamionesPlusView';
 import { ProfileColaborador } from './types';
 import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from './utils/cargoUtils';
 
 
-type ViewMode = 'HUB' | 'LIST' | 'SCAN' | 'CIERRE' | 'UPLOAD_NAE' | 'UPLOAD_MAESTRO' | 'HISTORIAL' | 'BANDEMAS' | 'CONFIG_MODALIDAD' | 'ADJUNTAR_AP' | 'RECLAMOS_MAGMA' | 'DASHBOARD' | 'SUPERADMIN';
+type ViewMode = 'HUB' | 'LIST' | 'SCAN' | 'CIERRE' | 'UPLOAD_NAE' | 'UPLOAD_MAESTRO' | 'HISTORIAL' | 'BANDEMAS' | 'CONFIG_MODALIDAD' | 'ADJUNTAR_AP' | 'RECLAMOS_MAGMA' | 'DASHBOARD' | 'SUPERADMIN' | 'CAMIONES_PLUS';
 
 const getInitialViewState = (): { view: ViewMode; naeId: string | null } => {
   try {
@@ -74,7 +75,7 @@ const getInitialViewState = (): { view: ViewMode; naeId: string | null } => {
     const storedNae = localStorage.getItem('audimas_active_nae') || sessionStorage.getItem('audimas_active_nae');
     const isSuperAdminStored = localStorage.getItem('audimas_superadmin_active') === 'true';
 
-    const validViews: ViewMode[] = ['HUB', 'LIST', 'SCAN', 'CIERRE', 'UPLOAD_NAE', 'UPLOAD_MAESTRO', 'HISTORIAL', 'BANDEMAS', 'CONFIG_MODALIDAD', 'ADJUNTAR_AP', 'RECLAMOS_MAGMA', 'DASHBOARD', 'SUPERADMIN'];
+    const validViews: ViewMode[] = ['HUB', 'LIST', 'SCAN', 'CIERRE', 'UPLOAD_NAE', 'UPLOAD_MAESTRO', 'HISTORIAL', 'BANDEMAS', 'CONFIG_MODALIDAD', 'ADJUNTAR_AP', 'RECLAMOS_MAGMA', 'DASHBOARD', 'SUPERADMIN', 'CAMIONES_PLUS'];
     
     let finalView: ViewMode = (urlView && validViews.includes(urlView))
       ? urlView 
@@ -612,7 +613,7 @@ export const App: React.FC = () => {
 
     const targetCamion = camiones.find(c => c.id === naeId);
     const estUpper = (targetCamion?.estado || '').trim().toUpperCase();
-    const needsStart = estUpper === 'PENDIENTE' || !targetCamion?.fecha_inicio_auditoria;
+    const needsStart = estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE' || !targetCamion?.fecha_inicio_auditoria;
 
     if (needsStart) {
       const now = new Date().toISOString();
@@ -669,11 +670,11 @@ export const App: React.FC = () => {
     const camionObj = typeof camionOrEstado === 'object' ? camionOrEstado : null;
     const estUpper = (typeof camionOrEstado === 'string' ? camionOrEstado : camionOrEstado?.estado || '').trim().toUpperCase();
 
-    if (estUpper === 'PENDIENTE') {
+    if (estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE') {
       return (
         <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/30 flex items-center space-x-1">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-          <span>PENDIENTE</span>
+          <span>{estUpper === 'DISPONIBLE' ? 'DISPONIBLE' : 'PENDIENTE'}</span>
         </span>
       );
     }
@@ -750,99 +751,103 @@ export const App: React.FC = () => {
 
 
   // Renderizado del Dashboard de AudiMAS (Nivel 1)
-  const renderAudiMasDashboard = () => (
-    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-32">
-      {/* Header Principal con Menú Hamburguesa */}
-      <header className="sticky top-0 z-30 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 px-4 py-3 flex items-center justify-between shadow-lg">
-        <div className="flex items-center space-x-2.5">
+  const renderAudiMasDashboard = () => {
+    // REGLA ESTRICTA: Los camiones en estado 'EN_CONSULTA' son exclusivos de Camiones+ y NO deben listarse en AudiMAS
+    const camionesAudiMas = camiones.filter(c => c.estado !== 'EN_CONSULTA');
+
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-32">
+        {/* Header Principal con Menú Hamburguesa */}
+        <header className="sticky top-0 z-30 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 px-4 py-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center space-x-2.5">
+            <div 
+              onClick={() => navigateTo('HUB')}
+              className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center font-['Chakra_Petch'] font-black text-xl text-white shadow-lg shadow-blue-600/40 border border-sky-400/30 cursor-pointer hover:opacity-90 transition-opacity"
+              title="Ir al Hub Central OperaMAS"
+            >
+              A
+            </div>
+            <div>
+              <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-0.5">
+                <span className="font-bold text-base text-sky-400">AUDI</span>
+                <span className="font-black text-lg text-white">MAS</span>
+                <span className="text-xs text-sky-300 font-bold ml-1">V1</span>
+              </h1>
+              <p className="text-[10px] text-sky-300/80 font-mono tracking-widest uppercase">GESTIÓN DE AUDITORÍA</p>
+            </div>
+          </div>
+
+          {/* Cápsula de Usuario Discreta */}
           <div 
-            onClick={() => navigateTo('HUB')}
-            className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center font-['Chakra_Petch'] font-black text-xl text-white shadow-lg shadow-blue-600/40 border border-sky-400/30 cursor-pointer hover:opacity-90 transition-opacity"
-            title="Ir al Hub Central OperaMAS"
+            onClick={() => setIsDrawerOpen(true)}
+            className="bg-[#061224]/80 border border-sky-500/30 rounded-full px-3 py-1.5 flex items-center space-x-2.5 shadow-md backdrop-blur-md cursor-pointer hover:bg-[#0c244d] transition-all select-none"
+            title={`Operario: ${collaborator} • Abrir Menú`}
           >
-            A
-          </div>
-          <div>
-            <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-0.5">
-              <span className="font-bold text-base text-sky-400">AUDI</span>
-              <span className="font-black text-lg text-white">MAS</span>
-              <span className="text-xs text-sky-300 font-bold ml-1">V1</span>
-            </h1>
-            <p className="text-[10px] text-sky-300/80 font-mono tracking-widest uppercase">GESTIÓN DE AUDITORÍA</p>
-          </div>
-        </div>
-
-        {/* Cápsula de Usuario Discreta */}
-        <div 
-          onClick={() => setIsDrawerOpen(true)}
-          className="bg-[#061224]/80 border border-sky-500/30 rounded-full px-3 py-1.5 flex items-center space-x-2.5 shadow-md backdrop-blur-md cursor-pointer hover:bg-[#0c244d] transition-all select-none"
-          title={`Operario: ${collaborator} • Abrir Menú`}
-        >
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsUserModalOpen(true);
-            }}
-            className="w-7 h-7 rounded-full bg-[#020b18] overflow-hidden flex items-center justify-center border border-sky-400/40 shrink-0 hover:opacity-90 transition-opacity"
-            title="Cambiar Foto / Perfil"
-          >
-            {collaboratorAvatar ? (
-              <img src={collaboratorAvatar} alt="Avatar" className="w-7 h-7 rounded-full object-cover" />
-            ) : (
-              <span className="font-['Chakra_Petch'] font-bold text-[10px] text-sky-300">
-                {collaborator.substring(0, 2)}
-              </span>
-            )}
-          </div>
-
-          <span className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wider truncate max-w-[120px] sm:max-w-[160px]">
-            {collaborator}
-          </span>
-
-          <Menu className="w-4 h-4 text-sky-400 shrink-0 ml-0.5" />
-        </div>
-      </header>
-
-      {/* Main Container */}
-      <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
-        {/* Banner de Notificación */}
-        {lastNotification && (
-          <div className="p-3.5 bg-emerald-950/80 border border-emerald-500/40 rounded-2xl flex items-start space-x-3 text-emerald-300 text-xs animate-fade-in shadow-lg">
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-['Chakra_Petch'] font-bold uppercase tracking-wider text-emerald-200">Sincronización Completada</p>
-              <p className="mt-0.5 text-emerald-300/90 leading-relaxed">{lastNotification}</p>
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsUserModalOpen(true);
+              }}
+              className="w-7 h-7 rounded-full bg-[#020b18] overflow-hidden flex items-center justify-center border border-sky-400/40 shrink-0 hover:opacity-90 transition-opacity"
+              title="Cambiar Foto / Perfil"
+            >
+              {collaboratorAvatar ? (
+                <img src={collaboratorAvatar} alt="Avatar" className="w-7 h-7 rounded-full object-cover" />
+              ) : (
+                <span className="font-['Chakra_Petch'] font-bold text-[10px] text-sky-300">
+                  {collaborator.substring(0, 2)}
+                </span>
+              )}
             </div>
-          </div>
-        )}
 
-        {/* Lista Principal de Camiones */}
-        <div className="space-y-3">
-          <div className="px-1 py-0.5">
-            <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-sky-400 uppercase tracking-widest">
-              CAMIONES NAE RECIBIDOS ({camiones.length})
-            </h3>
-          </div>
+            <span className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wider truncate max-w-[120px] sm:max-w-[160px]">
+              {collaborator}
+            </span>
 
-          {loadingCamiones ? (
-            <div className="p-8 text-center text-xs text-sky-400/80 font-mono">Cargando datos de camiones...</div>
-          ) : camiones.length === 0 ? (
-            <div className="p-8 text-center bg-[#061224]/90 border border-sky-500/20 rounded-2xl space-y-3 shadow-xl">
-              <Truck className="w-12 h-12 text-slate-600 mx-auto" />
-              <div>
-                <p className="font-['Chakra_Petch'] font-bold text-sm text-sky-200 uppercase tracking-wider">No hay camiones registrados</p>
-                <p className="text-xs text-slate-400 mt-1">Abre el menú GDS o pulsa abajo para importar un manifiesto NAE.</p>
+            <Menu className="w-4 h-4 text-sky-400 shrink-0 ml-0.5" />
+          </div>
+        </header>
+
+        {/* Main Container */}
+        <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
+          {/* Banner de Notificación */}
+          {lastNotification && (
+            <div className="p-3.5 bg-emerald-950/80 border border-emerald-500/40 rounded-2xl flex items-start space-x-3 text-emerald-300 text-xs animate-fade-in shadow-lg">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-['Chakra_Petch'] font-bold uppercase tracking-wider text-emerald-200">Sincronización Completada</p>
+                <p className="mt-0.5 text-emerald-300/90 leading-relaxed">{lastNotification}</p>
               </div>
-              <button
-                onClick={() => setCurrentView('UPLOAD_NAE')}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-blue-600/30 transition-all active:scale-95 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Cargar Camión NAE</span>
-              </button>
             </div>
-          ) : (
-            camiones.map((cam) => {
+          )}
+
+          {/* Lista Principal de Camiones */}
+          <div className="space-y-3">
+            <div className="px-1 py-0.5">
+              <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-sky-400 uppercase tracking-widest">
+                CAMIONES NAE RECIBIDOS ({camionesAudiMas.length})
+              </h3>
+            </div>
+
+            {loadingCamiones ? (
+              <div className="p-8 text-center text-xs text-sky-400/80 font-mono">Cargando datos de camiones...</div>
+            ) : camionesAudiMas.length === 0 ? (
+              <div className="p-8 text-center bg-[#061224]/90 border border-sky-500/20 rounded-2xl space-y-3 shadow-xl">
+                <Truck className="w-12 h-12 text-slate-600 mx-auto" />
+                <div>
+                  <p className="font-['Chakra_Petch'] font-bold text-sm text-sky-200 uppercase tracking-wider">No hay camiones registrados</p>
+                  <p className="text-xs text-slate-400 mt-1">Abre el menú GDS o pulsa abajo para importar un manifiesto NAE.</p>
+                </div>
+                <button
+                  onClick={() => setCurrentView('UPLOAD_NAE')}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-blue-600/30 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Cargar Camión NAE</span>
+                </button>
+              </div>
+            ) : (
+              camionesAudiMas.map((cam) => {
               const estUpper = (cam.estado || '').trim().toUpperCase();
               const esCierreParcial = isCamionCierreParcial(cam);
               const esCerrado = estUpper === 'FINALIZADO' || estUpper === 'CERRADO' || estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL' || esCierreParcial;
@@ -952,7 +957,7 @@ export const App: React.FC = () => {
                   )}
 
                   <div className={`grid gap-2 pt-2 border-t border-sky-500/10 ${esCerrado ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                    {!esCerrado && (estUpper === 'PENDIENTE' || !cam.fecha_inicio_auditoria) ? (
+                    {!esCerrado && (estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE' || !cam.fecha_inicio_auditoria) ? (
                       <div className="col-span-2 space-y-2">
                         <div className="grid grid-cols-2 gap-2">
                           {/* Botón VER DETALLE (Modo Consulta) */}
@@ -1048,8 +1053,9 @@ export const App: React.FC = () => {
         onBack={() => navigateTo('HUB')}
         onHome={() => navigateTo('HUB')}
       />
-    </div>
-  );
+      </div>
+    );
+  };
 
   // Selector de la vista activa según currentView
   const renderCurrentView = () => {
@@ -1062,10 +1068,20 @@ export const App: React.FC = () => {
               navigateTo('LIST');
             }}
             onOpenBandeMas={() => navigateTo('BANDEMAS')}
+            onOpenCamionesPlus={() => navigateTo('CAMIONES_PLUS')}
             collaboratorName={collaborator}
             collaboratorAvatar={collaboratorAvatar}
             onOpenProfile={() => setIsUserModalOpen(true)}
             onOpenDrawer={() => setIsDrawerOpen(true)}
+          />
+        );
+
+      case 'CAMIONES_PLUS':
+        return (
+          <CamionesPlusView
+            onBack={() => navigateTo('HUB')}
+            collaboratorName={collaborator}
+            initialNaeId={activeNaeId}
           />
         );
 
@@ -1250,6 +1266,10 @@ export const App: React.FC = () => {
         onOpenDashboardGerencial={() => {
           fetchCamiones();
           navigateTo('DASHBOARD');
+          setIsDrawerOpen(false);
+        }}
+        onOpenCamionesPlus={() => {
+          navigateTo('CAMIONES_PLUS');
           setIsDrawerOpen(false);
         }}
         onOpenCargarCamion={() => {

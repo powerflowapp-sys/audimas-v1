@@ -6,13 +6,15 @@ import {
   Download, 
   X, 
   Sparkles,
-  Plus
+  Plus,
+  Snowflake
 } from 'lucide-react';
 import { getIniciales } from '../utils/formatUtils';
 
 interface HubViewProps {
   onOpenAudiMas: () => void;
   onOpenBandeMas: () => void;
+  onOpenCamionesPlus?: () => void;
   collaboratorName?: string;
   collaboratorAvatar?: string;
   onOpenProfile?: () => void;
@@ -22,6 +24,7 @@ interface HubViewProps {
 export const HubView: React.FC<HubViewProps> = ({
   onOpenAudiMas,
   onOpenBandeMas,
+  onOpenCamionesPlus,
   collaboratorName = 'OPERADOR 1',
   collaboratorAvatar,
   onOpenProfile,
@@ -172,21 +175,28 @@ export const HubView: React.FC<HubViewProps> = ({
             </div>
           </div>
 
-          {/* APP 3: KardexMAS (Próximamente) */}
-          <div className="flex flex-col items-center justify-center opacity-60 cursor-not-allowed">
-            <div className="w-36 h-36 sm:w-44 sm:h-44 bg-slate-900/80 border border-slate-700/60 rounded-3xl flex items-center justify-center relative shadow-lg">
-              <Boxes className="w-14 h-14 text-slate-500" />
-              <div className="absolute top-2.5 right-2.5 bg-slate-800 p-1.5 rounded-full border border-slate-700">
-                <Lock className="w-4 h-4 text-slate-400" />
+          {/* APP 3: Camiones+ */}
+          <div 
+            onClick={() => {
+              if (onOpenCamionesPlus) onOpenCamionesPlus();
+            }}
+            className="flex flex-col items-center justify-center cursor-pointer group active:scale-95 transition-transform"
+          >
+            <div className="w-36 h-36 sm:w-44 sm:h-44 bg-gradient-to-br from-[#03234d] via-[#021838] to-[#010f24] border border-cyan-500/40 group-hover:border-cyan-400 rounded-3xl flex flex-col items-center justify-center relative shadow-2xl transition-all group-hover:scale-105">
+              <Snowflake className="w-14 h-14 sm:w-16 sm:h-16 text-cyan-300 drop-shadow-xl animate-spin-slow" />
+              <div className="absolute top-2.5 right-2.5 bg-cyan-950/90 px-2 py-0.5 rounded-full border border-cyan-400/40">
+                <span className="font-['Chakra_Petch'] font-black text-[9px] text-cyan-300 uppercase tracking-widest">
+                  AP2
+                </span>
               </div>
             </div>
 
             <div className="text-center mt-3">
-              <h3 className="font-['Chakra_Petch'] font-black text-base sm:text-lg text-slate-400 uppercase tracking-wider">
-                KardexMAS
+              <h3 className="font-['Chakra_Petch'] font-black text-base sm:text-lg text-white uppercase tracking-wider group-hover:text-cyan-300 transition-colors">
+                Camiones+
               </h3>
-              <span className="text-xs sm:text-sm font-mono text-slate-500 block mt-0.5">
-                Próximamente
+              <span className="text-xs sm:text-sm font-mono text-cyan-400 font-bold block mt-0.5">
+                Perecederos
               </span>
             </div>
           </div>

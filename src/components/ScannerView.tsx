@@ -189,7 +189,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
   const estUpper = (camion?.estado || '').trim().toUpperCase();
   const isFinalizado = ['FINALIZADO', 'CERRADO'].includes(estUpper);
-  const esPendiente = estUpper === 'PENDIENTE' || (!camion?.fecha_inicio_auditoria && !isFinalizado);
+  const esPendiente = estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE' || (!camion?.fecha_inicio_auditoria && !isFinalizado);
   const isReadOnlyMode = esPendiente || isFinalizado;
 
   // Estados para modal de confirmación de inicio de auditoría desde el banner consulta

@@ -34,8 +34,6 @@ interface CamionesPlusViewProps {
   initialNaeId?: string | null;
 }
 
-type FilterStatus = 'TODOS' | 'COMPLETO' | 'EN_RECEPCION' | 'PENDIENTE';
-
 export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   onBack,
   onHome,
@@ -54,7 +52,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   // Búsqueda y Filtros en la vista de detalle
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedDepto, setSelectedDepto] = useState<string>('TODOS');
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>('TODOS');
   const [soloAgotados, setSoloAgotados] = useState<boolean>(false);
 
   // Ocultamiento visual local exclusivo en Camiones+ (no borra de Supabase)
@@ -487,23 +484,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         }
       }
 
-      // 4. Filtro por estado de avance de recepción
-      const bEsp = Number(it.bultos_esperados || 0);
-      const bAud = Number(it.bultos_escaneados || 0);
-      const uEsp = Number(it.unidades_esperadas || 0);
-      const uAud = Number(it.unidades_escaneadas || 0);
-
-      const isComplete = (bEsp > 0 && bAud >= bEsp) || (uEsp > 0 && uAud >= uEsp);
-      const isProgress = (bAud > 0 && bAud < bEsp) || (uAud > 0 && uAud < uEsp);
-      const isPending = bAud === 0 && uAud === 0;
-
-      if (statusFilter === 'COMPLETO' && !isComplete) return false;
-      if (statusFilter === 'EN_RECEPCION' && !isProgress) return false;
-      if (statusFilter === 'PENDIENTE' && !isPending) return false;
-
       return true;
     });
-  }, [items, searchTerm, selectedDepto, soloAgotados, statusFilter]);
+  }, [items, searchTerm, selectedDepto, soloAgotados]);
 
   // Filtrado de lista de camiones con exclusión de IDs ocultados localmente
   const filteredCamiones = useMemo(() => {
@@ -655,137 +638,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         {selectedTruck ? (
           <div className="space-y-3.5 animate-fade-in">
             
-            {/* Tarjeta Cabecera del Camión */}
-            <div className="p-4 bg-[#051329]/90 border border-sky-500/30 rounded-2xl shadow-xl space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono font-black text-sm text-sky-400">
-                    NAE: {selectedTruck.numero_nae}
-                  </span>
-                  {(selectedTruck.estado?.includes('FINALIZADO') || selectedTruck.estado?.includes('CERRADO') || isCamionCierreParcial(selectedTruck)) && (
-                    <Lock className="w-3.5 h-3.5 text-red-400" />
-                  )}
-                  {selectedTruck.origen_carga === 'CAMIONES_PLUS' && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
-                      Camiones+
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center space-x-1.5">
-                  {renderEstadoBadge(selectedTruck)}
-                  <button
-                    onClick={() => setSelectedTruck(null)}
-                    className="text-[11px] text-sky-300 hover:text-white px-2 py-1 bg-[#0c2847] hover:bg-[#163a75] border border-sky-500/30 rounded-lg transition-all cursor-pointer font-['Chakra_Petch'] font-bold"
-                  >
-                    Cambiar
-                  </button>
-                </div>
-              </div>
-
-              {/* Insignias de Carga y Modalidad */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                {(() => {
-                  const clasif = getBadgeClasificacionCarga(selectedTruck);
-                  return (
-                    <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
-                      <span>{clasif.label}</span>
-                    </span>
-                  );
-                })()}
-                {selectedTruck.tiene_reporte_ap && (
-                  <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
-                    📊 REPORTE AP
-                  </span>
-                )}
-                {(selectedTruck.modo_auditoria || selectedTruck.estado?.includes('FINALIZADO') || selectedTruck.estado?.includes('CERRADO') || selectedTruck.estado === 'EN_PROCESO' || selectedTruck.fecha_inicio_auditoria || isCamionCierreParcial(selectedTruck)) && (() => {
-                  const mod = getBadgeModalidadAuditoria(selectedTruck);
-                  return (
-                    <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${mod.className}`}>
-                      <span>{mod.label}</span>
-                    </span>
-                  );
-                })()}
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
-                <div className="flex items-center space-x-1.5 truncate">
-                  <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                  <span className="truncate">{formatStoreDisplay(selectedTruck.tienda_codigo, selectedTruck.tienda_nombre, selectedTruck.numero_nae).fullDisplay}</span>
-                </div>
-                <span className="text-slate-400 text-[11px] font-mono shrink-0">
-                  {selectedTruck.fecha_arribo || formatDateTimeArg(selectedTruck.created_at)}
-                </span>
-              </div>
-
-              {/* KPIs de Avance Físico 2x2 */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-sky-500/15">
-                
-                {/* Bultos */}
-                <div className="p-2.5 bg-[#030e1f] border border-sky-500/20 rounded-xl space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
-                      <Package className="w-3 h-3 text-sky-400" />
-                      <span>Bultos</span>
-                    </span>
-                    <span className="text-[11px] font-mono font-bold text-sky-300">{stats.pctBultos}%</span>
-                  </div>
-                  <p className="text-xs font-['Chakra_Petch'] font-black text-white">
-                    {stats.bultosAuditados} <span className="text-[10px] text-slate-400 font-normal">de {stats.bultosEsperados} bultos</span>
-                  </p>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 rounded-full transition-all duration-300"
-                      style={{ width: `${stats.pctBultos}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Unidades */}
-                <div className="p-2.5 bg-[#030e1f] border border-sky-500/20 rounded-xl space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
-                      <Layers className="w-3 h-3 text-emerald-400" />
-                      <span>Unidades</span>
-                    </span>
-                    <span className="text-[11px] font-mono font-bold text-emerald-300">{stats.pctUnidades}%</span>
-                  </div>
-                  <p className="text-xs font-['Chakra_Petch'] font-black text-white">
-                    {stats.unidadesAuditadas} <span className="text-[10px] text-slate-400 font-normal">de {stats.unidadesEsperadas} un</span>
-                  </p>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-emerald-500 to-sky-400 rounded-full transition-all duration-300"
-                      style={{ width: `${stats.pctUnidades}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Agotados */}
-                <div className={`p-2 bg-[#030e1f] border rounded-xl flex items-center justify-between ${stats.agotadosCount > 0 ? 'border-amber-500/40 bg-amber-950/20' : 'border-sky-500/20'}`}>
-                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-amber-300 uppercase flex items-center space-x-1">
-                    <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Agotados</span>
-                  </span>
-                  <span className="font-mono text-xs font-bold text-amber-300">
-                    {stats.agotadosCount} SKUs
-                  </span>
-                </div>
-
-                {/* Total Ítems */}
-                <div className="p-2 bg-[#030e1f] border border-sky-500/20 rounded-xl flex items-center justify-between">
-                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
-                    <CheckCircle2 className="w-3 h-3 text-sky-400" />
-                    <span>Total Ítems</span>
-                  </span>
-                  <span className="font-mono text-xs font-bold text-white">
-                    {stats.totalItems} prod.
-                  </span>
-                </div>
-
-              </div>
-            </div>
-
             {/* Buscador y Filtros de Productos */}
             <div className="p-3 bg-[#051329]/90 border border-sky-500/30 rounded-2xl space-y-2.5">
               
@@ -857,30 +709,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   </span>
                 </button>
               )}
-
-              {/* Chips de Filtrado por Estado de Avance */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                {(['TODOS', 'COMPLETO', 'EN_RECEPCION', 'PENDIENTE'] as FilterStatus[]).map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                      statusFilter === st
-                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
-                        : 'bg-[#020b18] text-slate-300 hover:text-white border border-sky-500/20'
-                    }`}
-                  >
-                    {st === 'TODOS' && 'Todos'}
-                    {st === 'COMPLETO' && '🟢 100%'}
-                    {st === 'EN_RECEPCION' && '🟡 En Curso'}
-                    {st === 'PENDIENTE' && '⚪ Pend.'}
-                  </button>
-                ))}
-
-                <span className="text-[10px] text-slate-400 font-mono ml-auto">
-                  {filteredItems.length}/{items.length}
-                </span>
-              </div>
 
             </div>
 

@@ -19,11 +19,11 @@ import {
   Lock,
   Clock
 } from 'lucide-react';
-import { CamionNAE, AuditoriaItem, CamionManifiestoPreview } from '../types';
+import { CamionNAE, AuditoriaItem, CamionManifiestoPreview, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
 import { parseAgotadosAPv2, uploadCamionManifiesto, formatStoreDisplay } from '../services/excelParsers';
-import { formatDateTimeArg } from '../services/reportService';
-import { getBadgeClasificacionCarga } from '../utils/cargoUtils';
+import { formatDateTimeArg, enriquecerCamionesConLogsParciales } from '../services/reportService';
+import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from '../utils/cargoUtils';
 import { BottomNavCapsule } from './BottomNavCapsule';
 
 interface CamionesPlusViewProps {
@@ -83,9 +83,31 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
       if (error) throw error;
       const list: CamionNAE[] = data || [];
 
+      // Enriquecer con Depto 91 y logs de cierres parciales de auditoría exactamente igual que en AudiMAS
+      const withDept91 = await Promise.all(
+        list.map(async (cam) => {
+          let hasDepto91 = Boolean(cam.has_depto_91);
+          if (!hasDepto91 && (cam.numero_nae || '').trim().startsWith('5')) {
+            const { data: items91 } = await supabase
+              .from('auditoria_items')
+              .select('id')
+              .eq('nae_id', cam.id)
+              .or('depto_codigo.eq.91,depto_codigo.eq.091,depto_nombre.ilike.%congelado%')
+              .limit(1);
+            hasDepto91 = Boolean(items91 && items91.length > 0);
+          }
+          return {
+            ...cam,
+            has_depto_91: hasDepto91
+          };
+        })
+      );
+
+      const enrichedList = await enriquecerCamionesConLogsParciales(withDept91);
+
       // REGLA ESTRICTA: Excluir por completo camiones secos (Moreno 15, Escobar 8/08/008)
       // Mostrar ÚNICAMENTE camiones de frío, congelado o precargados en Camiones+
-      const perecederos = list.filter(cam => {
+      const perecederos = enrichedList.filter(cam => {
         const nae = (cam.numero_nae || '').trim();
         const isSecoMoreno = nae.startsWith('15');
         const isSecoEscobar = nae.startsWith('8') || nae.startsWith('08') || nae.startsWith('008');
@@ -390,6 +412,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   // Renderizador de Badges de Estado idéntico al de AudiMAS
   const renderEstadoBadge = (cam: CamionNAE) => {
     const estUpper = (cam?.estado || '').trim().toUpperCase();
+    const esCierreParcial = isCamionCierreParcial(cam);
 
     if (estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE') {
       return (
@@ -415,10 +438,18 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         </span>
       );
     }
+    if (esCierreParcial || estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL') {
+      return (
+        <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/40 flex items-center space-x-1">
+          <Clock className="w-3 h-3 text-amber-400" />
+          <span>FINALIZADO PARCIAL</span>
+        </span>
+      );
+    }
     return (
       <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-purple-500/20 text-purple-300 border-purple-500/30 flex items-center space-x-1">
         <Lock className="w-3 h-3 text-purple-400" />
-        <span>FINALIZADO</span>
+        <span>FINALIZADO / CERRADO</span>
       </span>
     );
   };
@@ -548,6 +579,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   <span className="font-mono font-black text-sm text-sky-400">
                     NAE: {selectedTruck.numero_nae}
                   </span>
+                  {(selectedTruck.estado?.includes('FINALIZADO') || selectedTruck.estado?.includes('CERRADO') || isCamionCierreParcial(selectedTruck)) && (
+                    <Lock className="w-3.5 h-3.5 text-red-400" />
+                  )}
                   {selectedTruck.origen_carga === 'CAMIONES_PLUS' && (
                     <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
                       Camiones+
@@ -566,7 +600,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 </div>
               </div>
 
-              {/* Insignias de Carga */}
+              {/* Insignias de Carga y Modalidad */}
               <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                 {(() => {
                   const clasif = getBadgeClasificacionCarga(selectedTruck);
@@ -581,6 +615,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                     📊 REPORTE AP
                   </span>
                 )}
+                {(selectedTruck.modo_auditoria || selectedTruck.estado?.includes('FINALIZADO') || selectedTruck.estado?.includes('CERRADO') || selectedTruck.estado === 'EN_PROCESO' || selectedTruck.fecha_inicio_auditoria || isCamionCierreParcial(selectedTruck)) && (() => {
+                  const mod = getBadgeModalidadAuditoria(selectedTruck);
+                  return (
+                    <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${mod.className}`}>
+                      <span>{mod.label}</span>
+                    </span>
+                  );
+                })()}
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
@@ -888,6 +930,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               </div>
             ) : (
               filteredCamiones.map((cam) => {
+                const estUpper = (cam.estado || '').trim().toUpperCase();
+                const esCierreParcial = isCamionCierreParcial(cam);
+                const esCerrado = estUpper === 'FINALIZADO' || estUpper === 'CERRADO' || estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL' || esCierreParcial;
                 const clasif = getBadgeClasificacionCarga(cam);
                 const isFromCamionesPlus = cam.origen_carga === 'CAMIONES_PLUS' || cam.estado === 'EN_CONSULTA';
 
@@ -902,6 +947,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                         <span className="font-mono font-black text-sm text-sky-400 group-hover:text-cyan-300 transition-colors">
                           NAE: {cam.numero_nae}
                         </span>
+                        {esCerrado && <Lock className="w-3.5 h-3.5 text-red-400" />}
                         {isFromCamionesPlus && (
                           <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
                             Camiones+
@@ -915,16 +961,27 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Insignias de Clasificación de Carga */}
+                    {/* Insignias de Clasificación de Carga y Modalidad Configurada */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                       <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
                         <span>{clasif.label}</span>
                       </span>
+
                       {cam.tiene_reporte_ap && (
                         <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
                           📊 REPORTE AP
                         </span>
                       )}
+
+                      {/* Modalidad de Auditoría Configurada */}
+                      {(cam.modo_auditoria || esCerrado || estUpper === 'EN_PROCESO' || cam.fecha_inicio_auditoria) && (() => {
+                        const mod = getBadgeModalidadAuditoria(cam);
+                        return (
+                          <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${mod.className}`}>
+                            <span>{mod.label}</span>
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center justify-between text-xs text-slate-300 font-medium">

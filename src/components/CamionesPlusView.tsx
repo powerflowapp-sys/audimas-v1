@@ -17,7 +17,8 @@ import {
   Package,
   Layers,
   Lock,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 import { CamionNAE, AuditoriaItem, CamionManifiestoPreview, isCamionCierreParcial } from '../types';
 import { supabase } from '../services/supabase';
@@ -56,8 +57,29 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('TODOS');
   const [soloAgotados, setSoloAgotados] = useState<boolean>(false);
 
-  // Búsqueda en lista de camiones
-  const [truckSearch, setTruckSearch] = useState<string>('');
+  // Ocultamiento visual local exclusivo en Camiones+ (no borra de Supabase)
+  const [hiddenTruckIds, setHiddenTruckIds] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('camiones_plus_hidden_ids');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Conteo de SKUs por camión
+  const [truckItemCounts, setTruckItemCounts] = useState<Record<string, number>>({});
+
+  const handleHideTruck = (e: React.MouseEvent, truckId: string) => {
+    e.stopPropagation();
+    const updated = [...hiddenTruckIds, truckId];
+    setHiddenTruckIds(updated);
+    try {
+      localStorage.setItem('camiones_plus_hidden_ids', JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Error al guardar camiones_plus_hidden_ids:', err);
+    }
+  };
 
   // Modal de Carga AP2
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
@@ -126,6 +148,25 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
       });
 
       setCamiones(perecederos);
+
+      // Obtener conteo de productos de cada camión
+      if (perecederos.length > 0) {
+        const truckIds = perecederos.map(c => c.id);
+        const { data: countData } = await supabase
+          .from('auditoria_items')
+          .select('nae_id')
+          .in('nae_id', truckIds);
+
+        const skusByNae: Record<string, number> = {};
+        if (countData) {
+          countData.forEach((row: any) => {
+            if (row.nae_id) {
+              skusByNae[row.nae_id] = (skusByNae[row.nae_id] || 0) + 1;
+            }
+          });
+        }
+        setTruckItemCounts(skusByNae);
+      }
 
       if (selectedTruck) {
         const updated = perecederos.find(c => c.id === selectedTruck.id);
@@ -341,44 +382,112 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     };
   }, [items]);
 
-  // Departamentos únicos para el filtro
-  const departamentos = useMemo(() => {
-    const deptos = new Set<string>();
+  // Departamentos estructurados para el carrusel de tabs
+  const departamentosTabs = useMemo(() => {
+    let totalAuditados = 0;
+    let totalAgotados = 0;
+
+    const deptMap: Record<string, {
+      code: string;
+      name: string;
+      auditados: number;
+      total: number;
+      agotados: number;
+    }> = {};
+
     items.forEach(it => {
-      const code = (it.depto_codigo || '').trim();
+      const bEsp = Number(it.bultos_esperados || 0);
+      const bAud = Number(it.bultos_escaneados || 0);
+      const uEsp = Number(it.unidades_esperadas || 0);
+      const uAud = Number(it.unidades_escaneadas || 0);
+
+      const isAuditado = (bEsp > 0 && bAud >= bEsp) || (uEsp > 0 && uAud >= uEsp) || bAud > 0 || uAud > 0;
+      const isAgotado = Boolean(it.es_agotado_transito);
+
+      if (isAuditado) totalAuditados++;
+      if (isAgotado) totalAgotados++;
+
+      const rawCode = (it.depto_codigo || '').trim();
+      const code = rawCode || 'GEN';
       const name = (it.depto_nombre || '').trim();
-      if (code || name) {
-        deptos.add(`${code ? code + ' - ' : ''}${name || 'GENERAL'}`);
+
+      if (!deptMap[code]) {
+        deptMap[code] = {
+          code: rawCode,
+          name,
+          auditados: 0,
+          total: 0,
+          agotados: 0
+        };
       }
+
+      deptMap[code].total++;
+      if (isAuditado) deptMap[code].auditados++;
+      if (isAgotado) deptMap[code].agotados++;
     });
-    return Array.from(deptos).sort();
+
+    const tabs = [
+      {
+        key: 'TODOS',
+        label: 'Todos',
+        auditadosCount: totalAuditados,
+        totalCount: items.length,
+        agotadosCount: totalAgotados
+      }
+    ];
+
+    const sortedDeptos = Object.values(deptMap).sort((a, b) => {
+      const numA = parseInt(a.code, 10);
+      const numB = parseInt(b.code, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return (a.code || a.name).localeCompare(b.code || b.name);
+    });
+
+    sortedDeptos.forEach(d => {
+      tabs.push({
+        key: d.code || d.name || 'GEN',
+        label: d.code ? `Dpto ${d.code}` : (d.name ? `Dpto ${d.name}` : 'Dpto Gen'),
+        auditadosCount: d.auditados,
+        totalCount: d.total,
+        agotadosCount: d.agotados
+      });
+    });
+
+    return tabs;
   }, [items]);
 
   // Ítems filtrados
   const filteredItems = useMemo(() => {
     return items.filter(it => {
+      // 1. Filtro exclusivo de agotados en tránsito si está activo
+      if (soloAgotados && !it.es_agotado_transito) {
+        return false;
+      }
+
+      // 2. Filtro de departamento según tab del carrusel
+      if (selectedDepto !== 'TODOS') {
+        const itemCode = (it.depto_codigo || '').trim();
+        const itemName = (it.depto_nombre || '').trim();
+        const matchCode = itemCode === selectedDepto;
+        const matchName = itemName === selectedDepto;
+        const matchGen = !itemCode && selectedDepto === 'GEN';
+        if (!matchCode && !matchName && !matchGen) {
+          return false;
+        }
+      }
+
+      // 3. Búsqueda por SKU, UPC o Descripción
       if (searchTerm.trim()) {
         const query = searchTerm.toLowerCase().trim();
         const skuMatch = (it.sku || '').toLowerCase().includes(query);
         const upcMatch = (it.upc || '').toLowerCase().includes(query);
         const descMatch = (it.descripcion || '').toLowerCase().includes(query);
-        const deptoMatch = (it.depto_nombre || '').toLowerCase().includes(query) || (it.depto_codigo || '').toLowerCase().includes(query);
-        if (!skuMatch && !upcMatch && !descMatch && !deptoMatch) {
+        if (!skuMatch && !upcMatch && !descMatch) {
           return false;
         }
       }
 
-      if (selectedDepto !== 'TODOS') {
-        const deptoStr = `${(it.depto_codigo || '').trim() ? (it.depto_codigo || '').trim() + ' - ' : ''}${(it.depto_nombre || 'GENERAL').trim()}`;
-        if (deptoStr !== selectedDepto) {
-          return false;
-        }
-      }
-
-      if (soloAgotados && !it.es_agotado_transito) {
-        return false;
-      }
-
+      // 4. Filtro por estado de avance de recepción
       const bEsp = Number(it.bultos_esperados || 0);
       const bAud = Number(it.bultos_escaneados || 0);
       const uEsp = Number(it.unidades_esperadas || 0);
@@ -396,18 +505,15 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     });
   }, [items, searchTerm, selectedDepto, soloAgotados, statusFilter]);
 
-  // Filtrado de lista de camiones con búsqueda de texto
+  // Filtrado de lista de camiones con exclusión de IDs ocultados localmente
   const filteredCamiones = useMemo(() => {
     return camiones.filter(cam => {
-      if (truckSearch.trim()) {
-        const q = truckSearch.toLowerCase().trim();
-        const naeMatch = (cam.numero_nae || '').toLowerCase().includes(q);
-        const storeMatch = (cam.tienda_nombre || '').toLowerCase().includes(q) || (cam.tienda_codigo || '').toLowerCase().includes(q);
-        if (!naeMatch && !storeMatch) return false;
+      if (hiddenTruckIds.includes(cam.id) || hiddenTruckIds.includes(cam.numero_nae)) {
+        return false;
       }
       return true;
     });
-  }, [camiones, truckSearch]);
+  }, [camiones, hiddenTruckIds]);
 
   // Renderizador de Badges de Estado idéntico al de AudiMAS
   const renderEstadoBadge = (cam: CamionNAE) => {
@@ -545,29 +651,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
       {/* 2. Contenedor Centralizado Idéntico a AudiMAS (max-w-md mx-auto w-full) */}
       <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
-        
-        {/* Banner Minimalista Superior */}
-        {!selectedTruck && (
-          <div className="p-3 bg-[#061838]/80 border border-sky-500/30 rounded-2xl flex items-center justify-between shadow-lg">
-            <div className="flex items-center space-x-2.5 min-w-0">
-              <div className="p-1.5 bg-cyan-500/20 rounded-lg border border-cyan-400/30 shrink-0">
-                <Snowflake className="w-4 h-4 text-cyan-300" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wide truncate">
-                  Visor de Frío, Congelado y AP2
-                </p>
-                <p className="text-[10px] text-sky-300/80 font-mono truncate">
-                  Consulta de stock y recepción en tiempo real
-                </p>
-              </div>
-            </div>
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold shrink-0">
-              100% Perecederos
-            </span>
-          </div>
-        )}
-
         {/* 3. VISTA DETALLADA DEL CAMIÓN SELECCIONADO */}
         {selectedTruck ? (
           <div className="space-y-3.5 animate-fade-in">
@@ -725,35 +808,58 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 )}
               </div>
 
-              {departamentos.length > 0 && (
-                <div>
-                  <select
-                    value={selectedDepto}
-                    onChange={(e) => setSelectedDepto(e.target.value)}
-                    className="w-full bg-[#020b18] border border-sky-500/30 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
-                  >
-                    <option value="TODOS">Todos los departamentos</option>
-                    {departamentos.map((d, i) => (
-                      <option key={i} value={d}>{d}</option>
-                    ))}
-                  </select>
+              {/* Carrusel Horizontal de Departamentos (Scrollable X) */}
+              <div className="space-y-1">
+                <div className="overflow-x-auto flex items-center space-x-2 pb-1.5 pt-0.5 scrollbar-thin scrollbar-thumb-sky-500/30 select-none">
+                  {departamentosTabs.map((tab) => {
+                    const isSelected = selectedDepto === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setSelectedDepto(tab.key)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1.5 shrink-0 border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-sky-500/25 border-cyan-400 text-white shadow-md shadow-sky-950 scale-[1.02]'
+                            : 'bg-[#030e1f] border-sky-500/30 text-slate-300 hover:bg-[#081f3d] hover:border-sky-400/50'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-md bg-[#020b18] text-sky-300 border border-sky-500/20">
+                          {tab.auditadosCount}/{tab.totalCount}
+                        </span>
+                        {tab.agotadosCount > 0 && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-red-950/80 text-red-400 border border-red-500/40 flex items-center space-x-1 font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                            <span>{tab.agotadosCount}</span>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
-              {/* Chips de Filtrado */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              {/* Botón de Alerta / Filtro de Agotados en Tránsito */}
+              {stats.agotadosCount > 0 && (
                 <button
                   onClick={() => setSoloAgotados(!soloAgotados)}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1 transition-all cursor-pointer ${
+                  className={`w-full py-2.5 px-3 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center justify-center space-x-2 border transition-all cursor-pointer shadow-md active:scale-[0.99] ${
                     soloAgotados
-                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
-                      : 'bg-[#020b18] text-amber-300 hover:bg-[#0c2847] border border-amber-500/30'
+                      ? 'bg-red-600 text-white border-red-400 shadow-red-950/50'
+                      : 'bg-red-950/30 text-red-400 border-red-500/50 hover:bg-red-950/50 hover:border-red-400'
                   }`}
                 >
-                  <AlertTriangle className="w-3 h-3 shrink-0" />
-                  <span>Agotados ({stats.agotadosCount})</span>
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                  <span>
+                    {soloAgotados
+                      ? `Mostrando solo los ${stats.agotadosCount} agotados (Toca para ver todos)`
+                      : `⚠️ Ver solo los ${stats.agotadosCount} agotados en tránsito`}
+                  </span>
                 </button>
+              )}
 
+              {/* Chips de Filtrado por Estado de Avance */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                 {(['TODOS', 'COMPLETO', 'EN_RECEPCION', 'PENDIENTE'] as FilterStatus[]).map((st) => (
                   <button
                     key={st}
@@ -766,7 +872,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   >
                     {st === 'TODOS' && 'Todos'}
                     {st === 'COMPLETO' && '🟢 100%'}
-                    {st === 'EN_RECEPCION' && '🟡 Curso'}
+                    {st === 'EN_RECEPCION' && '🟡 En Curso'}
                     {st === 'PENDIENTE' && '⚪ Pend.'}
                   </button>
                 ))}
@@ -883,25 +989,24 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
           </div>
         ) : (
-          /* 4. LISTADO PRINCIPAL DE CAMIONES DE PERECEDEROS (Tarjetas Estilo AudiMAS) */
+          /* 4. LISTADO PRINCIPAL DE CAMIONES DE PERECEDEROS (Ultra Limpio) */
           <div className="space-y-3">
             
-            {/* Buscador de Camiones */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sky-400" />
-              <input
-                type="text"
-                value={truckSearch}
-                onChange={(e) => setTruckSearch(e.target.value)}
-                placeholder="Buscar por NAE o Tienda..."
-                className="w-full bg-[#051329]/90 border border-sky-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 font-mono shadow-sm"
-              />
-            </div>
-
-            <div className="px-1 py-0.5">
+            <div className="px-1 py-0.5 flex items-center justify-between">
               <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-sky-400 uppercase tracking-widest">
-                CAMIONES DE PERECEDEROS ({filteredCamiones.length})
+                CAMIONES ACTIVOS ({filteredCamiones.length})
               </h3>
+              {hiddenTruckIds.length > 0 && (
+                <button
+                  onClick={() => {
+                    setHiddenTruckIds([]);
+                    localStorage.removeItem('camiones_plus_hidden_ids');
+                  }}
+                  className="text-[10px] text-sky-400/80 hover:text-sky-300 underline font-mono cursor-pointer"
+                >
+                  Restaurar ({hiddenTruckIds.length})
+                </button>
+              )}
             </div>
 
             {/* Listado de Tarjetas de Camión */}
@@ -914,7 +1019,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 <Truck className="w-12 h-12 text-slate-600 mx-auto" />
                 <div>
                   <p className="font-['Chakra_Petch'] font-bold text-sm text-sky-200 uppercase tracking-wider">
-                    No hay camiones de perecederos registrados
+                    No hay camiones de perecederos activos
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
                     Carga un archivo en formato AP2 para precargar el primer camión de frío/congelado.
@@ -934,7 +1039,8 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 const esCierreParcial = isCamionCierreParcial(cam);
                 const esCerrado = estUpper === 'FINALIZADO' || estUpper === 'CERRADO' || estUpper === 'FINALIZADO_PARCIAL' || estUpper === 'CERRADO_PARCIAL' || esCierreParcial;
                 const clasif = getBadgeClasificacionCarga(cam);
-                const isFromCamionesPlus = cam.origen_carga === 'CAMIONES_PLUS' || cam.estado === 'EN_CONSULTA';
+                const totalSkus = truckItemCounts[cam.id] || 0;
+                const formattedNae = cam.numero_nae.includes('-') ? cam.numero_nae : `${cam.numero_nae}-${cam.tienda_codigo || ''}`;
 
                 return (
                   <div
@@ -942,29 +1048,51 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                     onClick={() => setSelectedTruck(cam)}
                     className="p-4 bg-[#051329]/90 border border-sky-500/30 hover:border-cyan-400/80 rounded-2xl transition-all space-y-3 shadow-xl cursor-pointer active:scale-[0.99] group"
                   >
+                    {/* Cabecera con NAE, Candado, Estado Simplificado y Botón de Tacho */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <span className="font-mono font-black text-sm text-sky-400 group-hover:text-cyan-300 transition-colors">
-                          NAE: {cam.numero_nae}
+                          NAE: {formattedNae}
                         </span>
                         {esCerrado && <Lock className="w-3.5 h-3.5 text-red-400" />}
-                        {isFromCamionesPlus && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
-                            Camiones+
-                          </span>
-                        )}
                       </div>
 
-                      <div className="flex items-center space-x-1.5">
-                        {renderEstadoBadge(cam)}
-                        <ChevronRight className="w-4 h-4 text-sky-400 group-hover:translate-x-1 transition-transform" />
+                      <div className="flex items-center space-x-2">
+                        {/* Estado simplificado en 2 variantes claras */}
+                        {esCerrado ? (
+                          <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-purple-500/20 text-purple-300 border-purple-500/30 flex items-center space-x-1">
+                            <Lock className="w-3 h-3 text-purple-400" />
+                            <span>FINALIZADO / CERRADO</span>
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 flex items-center space-x-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                            <span>EN CURSO / PENDIENTE</span>
+                          </span>
+                        )}
+
+                        {/* Botón de Basura (Ocultamiento Visual Exclusivo Local) */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleHideTruck(e, cam.id)}
+                          className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/15 rounded-lg transition-colors cursor-pointer"
+                          title="Ocultar camión de Camiones+ (no borra datos de AudiMAS ni BD)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
-                    {/* Insignias de Clasificación de Carga y Modalidad Configurada */}
+                    {/* Badges y Datos: Tipo de Carga, Total de Productos y Reporte AP */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {/* 1. Tipo de carga: Frío o Congelado */}
                       <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
                         <span>{clasif.label}</span>
+                      </span>
+
+                      {/* 2. Total de productos que contiene el camión */}
+                      <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-sky-950/80 text-sky-300 border border-sky-500/30">
+                        📦 {totalSkus > 0 ? `${totalSkus} SKUs` : 'Perecederos'}
                       </span>
 
                       {cam.tiene_reporte_ap && (
@@ -972,25 +1100,16 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                           📊 REPORTE AP
                         </span>
                       )}
-
-                      {/* Modalidad de Auditoría Configurada */}
-                      {(cam.modo_auditoria || esCerrado || estUpper === 'EN_PROCESO' || cam.fecha_inicio_auditoria) && (() => {
-                        const mod = getBadgeModalidadAuditoria(cam);
-                        return (
-                          <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${mod.className}`}>
-                            <span>{mod.label}</span>
-                          </span>
-                        );
-                      })()}
                     </div>
 
+                    {/* Tienda y Fecha de finalización / arribo */}
                     <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
                       <div className="flex items-center space-x-1.5 truncate">
                         <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">{formatStoreDisplay(cam.tienda_codigo, cam.tienda_nombre, cam.numero_nae).fullDisplay}</span>
                       </div>
                       <span className="text-slate-400 text-[11px] font-mono shrink-0">
-                        {cam.fecha_arribo || formatDateTimeArg(cam.created_at)}
+                        {cam.fecha_fin_auditoria ? formatDateTimeArg(cam.fecha_fin_auditoria) : cam.fecha_arribo || formatDateTimeArg(cam.created_at)}
                       </span>
                     </div>
 

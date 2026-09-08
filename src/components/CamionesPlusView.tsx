@@ -37,6 +37,15 @@ interface CamionesPlusViewProps {
   onResetOpenUploadModal?: () => void;
 }
 
+// Función de formateo numérico limpia para bultos y unidades
+const formatCantidadLimpia = (val: number | string | null | undefined): string => {
+  const num = Number(val);
+  if (isNaN(num) || num === 0) return '0';
+  if (Number.isInteger(num)) return num.toString();
+  // Limitar a máximo 2 decimales suprimiendo ceros redundantes (ej. 2.2833333 -> 2.28)
+  return parseFloat(num.toFixed(2)).toString();
+};
+
 export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   onBack,
   onHome,
@@ -610,30 +619,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
             </p>
           </div>
         </div>
-
-        {/* Acciones de la Cabecera */}
-        <div className="flex items-center space-x-1.5">
-          <button
-            onClick={() => {
-              if (selectedTruck) {
-                fetchItems(selectedTruck.id);
-              }
-              fetchCamiones();
-            }}
-            className="p-2 bg-[#061e38] hover:bg-[#0a2e56] text-cyan-300 border border-sky-500/30 rounded-xl transition-all cursor-pointer active:scale-95"
-            title="Refrescar datos en vivo"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingCamiones || loadingItems ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-md shadow-blue-600/30 border border-sky-400/30 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Cargar AP2</span>
-          </button>
-        </div>
       </header>
 
       {/* 2. Contenedor Centralizado Idéntico a AudiMAS (max-w-md mx-auto w-full) */}
@@ -787,16 +772,16 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 </div>
               ) : (
                 filteredItems.map((item) => {
-                  const bEsp = Number(item.bultos_esperados || 0);
-                  const uEsp = Number(item.unidades_esperadas || 0);
+                  const bEsp = formatCantidadLimpia(item.bultos_esperados);
+                  const uEsp = formatCantidadLimpia(item.unidades_esperadas);
 
                   return (
                     <div
                       key={item.id || item.upc}
-                      className={`p-3.5 bg-[#051329]/90 border rounded-2xl transition-all space-y-2.5 shadow-md ${
+                      className={`p-3.5 bg-[#051329]/90 border rounded-2xl transition-all space-y-2.5 ${
                         item.es_agotado_transito 
-                          ? 'border-red-500/50 bg-gradient-to-r from-[#051329]/95 to-red-950/25 shadow-red-950/20' 
-                          : 'border-sky-500/20'
+                          ? 'border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.15)] bg-gradient-to-r from-[#051329]/95 to-red-950/25' 
+                          : 'border-sky-500/20 shadow-md'
                       }`}
                     >
                       {/* Cabecera Ítem */}
@@ -815,28 +800,21 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Agotado en Tránsito Destacado */}
+                      {/* Agotado en Tránsito Destacado (Sin stock de tienda) */}
                       {item.es_agotado_transito && (
-                        <div className="p-2 bg-red-950/90 border border-red-500/60 rounded-xl flex items-center justify-between text-xs text-red-200 shadow-sm">
-                          <div className="flex items-center space-x-2">
-                            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 animate-pulse" />
-                            <span className="font-['Chakra_Petch'] font-black uppercase tracking-wider text-red-300">
-                              ⚠️ AGOTADO EN TRÁNSITO
-                            </span>
-                          </div>
-                          {item.stock_disponible !== undefined && (
-                            <span className="font-mono text-[11px] text-red-200/90 font-bold bg-red-900/40 px-2 py-0.5 rounded border border-red-500/30">
-                              Stock: {item.stock_disponible} un
-                            </span>
-                          )}
+                        <div className="p-2 bg-red-950/90 border border-red-500/60 rounded-xl flex items-center justify-center space-x-2 text-xs text-red-200 shadow-sm">
+                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 animate-pulse" />
+                          <span className="font-['Chakra_Petch'] font-black uppercase tracking-wider text-red-300">
+                            ⚠️ AGOTADO EN TRÁNSITO
+                          </span>
                         </div>
                       )}
 
-                      {/* Bultos y Unidades Previstas (Exclusivamente Logístico) */}
+                      {/* Bultos y Unidades a Recibir (Exclusivamente Logístico con Formateo Limpio) */}
                       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-sky-500/15 text-xs">
                         <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
                           <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase font-bold">
-                            Bultos Previstos:
+                            BULTOS A RECIBIR:
                           </span>
                           <span className="font-mono text-xs font-black text-sky-300">
                             {bEsp} <span className="text-[10px] text-slate-400 font-normal">bultos</span>
@@ -845,7 +823,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
                         <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
                           <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase font-bold">
-                            Unidades Previstas:
+                            UNIDADES A RECIBIR:
                           </span>
                           <span className="font-mono text-xs font-black text-cyan-300">
                             {uEsp} <span className="text-[10px] text-slate-400 font-normal">un</span>

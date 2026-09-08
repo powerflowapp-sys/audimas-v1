@@ -595,10 +595,10 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 onBack();
               }
             }}
-            className="w-9 h-9 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-xl flex items-center justify-center font-['Chakra_Petch'] font-black text-xl text-white shadow-lg shadow-cyan-600/40 border border-cyan-400/30 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+            className="w-10 h-10 rounded-xl overflow-hidden border border-cyan-400/40 shadow-lg shadow-cyan-600/30 cursor-pointer hover:opacity-90 transition-opacity shrink-0 flex items-center justify-center bg-[#020b18]"
             title="Ir al Hub Central"
           >
-            <Snowflake className="w-5 h-5 text-white animate-spin-slow" />
+            <img src="/camiones-mas-icon.png" alt="Camiones Más" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-1">

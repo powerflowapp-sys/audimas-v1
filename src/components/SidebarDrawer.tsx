@@ -288,10 +288,13 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               </button>
             </nav>
 
-            {/* 4. Módulo CAMIONESMÁS */}
+            {/* 4. Módulo CAMIONES MÁS */}
             <nav className="px-3 pt-1 space-y-1">
               <div className="font-['Chakra_Petch'] font-black text-xs text-sky-300 uppercase tracking-wider border-b border-sky-500/20 pb-1 px-2 mb-1.5 flex items-center justify-between">
-                <span>CAMIONESMÁS</span>
+                <div className="flex items-center space-x-1.5">
+                  <img src="/camiones-mas-icon.png" alt="Camiones Más" className="w-4 h-4 rounded-md object-cover shadow-sm border border-cyan-400/40" />
+                  <span>CAMIONES MÁS</span>
+                </div>
               </div>
 
               {/* [ ❄️ Consultar Camiones Perecederos ] */}

@@ -8,17 +8,14 @@ import {
   ArrowLeft, 
   CheckCircle2, 
   AlertTriangle, 
-  Clock, 
-  Filter, 
-  Package, 
-  Layers, 
   Building2, 
   FileSpreadsheet, 
   X,
   ChevronRight,
   Eye,
-  SlidersHorizontal,
-  Info
+  Info,
+  Package,
+  Layers
 } from 'lucide-react';
 import { CamionNAE, AuditoriaItem, CamionManifiestoPreview } from '../types';
 import { supabase } from '../services/supabase';
@@ -39,7 +36,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   collaboratorName = 'OPERADOR 1',
   initialNaeId = null
 }) => {
-  // Lista de camiones consultables
+  // Lista de camiones de perecederos
   const [camiones, setCamiones] = useState<CamionNAE[]>([]);
   const [loadingCamiones, setLoadingCamiones] = useState<boolean>(true);
   const [selectedTruck, setSelectedTruck] = useState<CamionNAE | null>(null);
@@ -54,9 +51,8 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('TODOS');
   const [soloAgotados, setSoloAgotados] = useState<boolean>(false);
 
-  // Filtro en lista de camiones
+  // Búsqueda en lista de camiones
   const [truckSearch, setTruckSearch] = useState<string>('');
-  const [truckOriginFilter, setTruckOriginFilter] = useState<'TODOS' | 'CAMIONES_PLUS' | 'PERECEDEROS'>('TODOS');
 
   // Modal de Carga AP2
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
@@ -70,7 +66,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Cargar camiones disponibles para Camiones+
+  // Cargar camiones: FILTRADO ESTRICTO EXCLUSIVO DE FRÍO / CONGELADO / AP2
   const fetchCamiones = async () => {
     setLoadingCamiones(true);
     try {
@@ -81,18 +77,39 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
       if (error) throw error;
       const list: CamionNAE[] = data || [];
-      setCamiones(list);
 
-      // Si había un camión seleccionado previamente, actualizar su referencia
+      // REGLA ESTRICTA: Excluir por completo camiones secos (Moreno 15, Escobar 8/08/008)
+      // Mostrar ÚNICAMENTE camiones de frío, congelado o precargados en Camiones+
+      const perecederos = list.filter(cam => {
+        const nae = (cam.numero_nae || '').trim();
+        const isSecoMoreno = nae.startsWith('15');
+        const isSecoEscobar = nae.startsWith('8') || nae.startsWith('08') || nae.startsWith('008');
+
+        // Si es seco y no proviene de Camiones+, excluirlo rotundamente
+        if ((isSecoMoreno || isSecoEscobar) && cam.origen_carga !== 'CAMIONES_PLUS') {
+          return false;
+        }
+
+        const isColdOrPerecedero = 
+          cam.origen_carga === 'CAMIONES_PLUS' || 
+          cam.estado === 'EN_CONSULTA' || 
+          nae.startsWith('5') || 
+          Boolean(cam.has_depto_91);
+
+        return isColdOrPerecedero;
+      });
+
+      setCamiones(perecederos);
+
       if (selectedTruck) {
-        const updated = list.find(c => c.id === selectedTruck.id);
+        const updated = perecederos.find(c => c.id === selectedTruck.id);
         if (updated) setSelectedTruck(updated);
       } else if (initialNaeId) {
-        const found = list.find(c => c.id === initialNaeId);
+        const found = perecederos.find(c => c.id === initialNaeId);
         if (found) setSelectedTruck(found);
       }
     } catch (err) {
-      console.error('Error al cargar camiones en Camiones+:', err);
+      console.error('Error al cargar camiones de perecederos:', err);
     } finally {
       setLoadingCamiones(false);
     }
@@ -210,7 +227,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
       setUploadSuccess(`¡Camión NAE #${previewData.numero_nae} precargado exitosamente en Camiones+ con ${res.totalItems} productos! Estado: EN CONSULTA.`);
       await fetchCamiones();
 
-      // Abrir directamente el camión precargado tras 1 segundo
       setTimeout(() => {
         setIsUploadModalOpen(false);
         setSelectedFile(null);
@@ -315,7 +331,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   // Ítems filtrados
   const filteredItems = useMemo(() => {
     return items.filter(it => {
-      // 1. Buscador texto
       if (searchTerm.trim()) {
         const query = searchTerm.toLowerCase().trim();
         const skuMatch = (it.sku || '').toLowerCase().includes(query);
@@ -327,7 +342,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         }
       }
 
-      // 2. Filtro Departamento
       if (selectedDepto !== 'TODOS') {
         const deptoStr = `${(it.depto_codigo || '').trim() ? (it.depto_codigo || '').trim() + ' - ' : ''}${(it.depto_nombre || 'GENERAL').trim()}`;
         if (deptoStr !== selectedDepto) {
@@ -335,12 +349,10 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         }
       }
 
-      // 3. Solo Agotados en Tránsito
       if (soloAgotados && !it.es_agotado_transito) {
         return false;
       }
 
-      // 4. Filtro por Estado de Recepción del Ítem
       const bEsp = Number(it.bultos_esperados || 0);
       const bAud = Number(it.bultos_escaneados || 0);
       const uEsp = Number(it.unidades_esperadas || 0);
@@ -358,36 +370,24 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     });
   }, [items, searchTerm, selectedDepto, soloAgotados, statusFilter]);
 
-  // Filtrado de la lista de camiones
+  // Filtrado de lista de camiones con búsqueda de texto
   const filteredCamiones = useMemo(() => {
     return camiones.filter(cam => {
-      // Búsqueda por NAE o Tienda
       if (truckSearch.trim()) {
         const q = truckSearch.toLowerCase().trim();
         const naeMatch = (cam.numero_nae || '').toLowerCase().includes(q);
         const storeMatch = (cam.tienda_nombre || '').toLowerCase().includes(q) || (cam.tienda_codigo || '').toLowerCase().includes(q);
         if (!naeMatch && !storeMatch) return false;
       }
-
-      // Filtro de Origen
-      if (truckOriginFilter === 'CAMIONES_PLUS') {
-        return cam.origen_carga === 'CAMIONES_PLUS' || cam.estado === 'EN_CONSULTA';
-      }
-
-      if (truckOriginFilter === 'PERECEDEROS') {
-        const isCold = (cam.numero_nae || '').startsWith('5') || cam.origen_carga === 'CAMIONES_PLUS';
-        return isCold;
-      }
-
       return true;
     });
-  }, [camiones, truckSearch, truckOriginFilter]);
+  }, [camiones, truckSearch]);
 
   // Helper de Insignia de Recepción Global
   const renderReceptionBadge = (state: 'COMPLETO' | 'EN_RECEPCION' | 'PENDIENTE', className: string = '') => {
     if (state === 'COMPLETO') {
       return (
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 ${className}`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 shrink-0 ${className}`}>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           <span>🟢 COMPLETO (100%)</span>
         </span>
@@ -395,14 +395,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     }
     if (state === 'EN_RECEPCION') {
       return (
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1 ${className}`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1 shrink-0 ${className}`}>
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
           <span>🟡 EN RECEPCIÓN</span>
         </span>
       );
     }
     return (
-      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-slate-700/40 text-slate-300 border border-slate-600/40 flex items-center space-x-1 ${className}`}>
+      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-slate-700/40 text-slate-300 border border-slate-600/40 flex items-center space-x-1 shrink-0 ${className}`}>
         <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
         <span>⚪ PENDIENTE</span>
       </span>
@@ -441,460 +441,409 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#02182b] via-[#021324] to-[#010914] text-white flex flex-col font-sans select-none pb-24">
-      
-      {/* 1. Header Principal Estilo Frío / Perecederos */}
-      <header className="sticky top-0 z-40 bg-[#031428]/95 backdrop-blur-md border-b border-cyan-500/30 px-4 py-3 flex items-center justify-between shadow-xl">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() => {
-              if (selectedTruck) {
-                setSelectedTruck(null);
-              } else {
-                onBack();
-              }
-            }}
-            className="p-2 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 rounded-xl text-cyan-300 transition-all cursor-pointer active:scale-95"
-            title={selectedTruck ? 'Ver todos los camiones' : 'Volver al Menú'}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+    <div className="min-h-screen bg-slate-950 text-white p-3 md:p-4 select-none pb-28 font-sans">
+      <div className="max-w-md md:max-w-lg mx-auto space-y-3.5">
+        
+        {/* 1. Header Compacto Mobile-First */}
+        <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between shadow-xl">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <button
+              onClick={() => {
+                if (selectedTruck) {
+                  setSelectedTruck(null);
+                } else {
+                  onBack();
+                }
+              }}
+              className="p-2 bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 rounded-xl text-cyan-300 transition-all cursor-pointer active:scale-95 shrink-0"
+              title={selectedTruck ? 'Volver a lista de camiones' : 'Volver al Menú'}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
 
-          <div>
-            <div className="flex items-center space-x-2">
-              <div className="p-1.5 bg-cyan-500/20 rounded-lg border border-cyan-400/40">
-                <Snowflake className="w-4 h-4 text-cyan-300 animate-spin-slow" />
+            <div className="min-w-0">
+              <div className="flex items-center space-x-1.5">
+                <Snowflake className="w-4 h-4 text-cyan-400 shrink-0 animate-spin-slow" />
+                <h1 className="font-['Chakra_Petch'] font-black text-sm text-white tracking-wider flex items-center space-x-1 truncate">
+                  <span>CAMIONES</span>
+                  <span className="text-cyan-400">+</span>
+                </h1>
+                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-full font-bold shrink-0">
+                  PERECEDEROS
+                </span>
               </div>
-              <h1 className="font-['Chakra_Petch'] font-black text-base text-white tracking-wider flex items-center space-x-1.5">
-                <span>CAMIONES</span>
-                <span className="text-cyan-400">+</span>
-              </h1>
-              <span className="text-[10px] font-mono px-2 py-0.5 bg-cyan-900/60 text-cyan-200 border border-cyan-500/30 rounded-full font-bold">
-                PERECEDEROS & AP2
-              </span>
+              <p className="text-[10px] text-cyan-300/80 font-mono tracking-wide truncate">
+                CONSULTA FRÍO Y AVANCE EN VIVO
+              </p>
             </div>
-            <p className="text-[10px] text-cyan-300/80 font-mono tracking-wide">
-              CONSULTA OPERATIVA Y AVANCE DE RECEPCIÓN
-            </p>
           </div>
-        </div>
 
-        {/* Acciones del Header */}
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => {
-              if (selectedTruck) {
-                fetchItems(selectedTruck.id);
-              }
-              fetchCamiones();
-            }}
-            className="p-2 bg-[#06203d] hover:bg-[#0c315e] text-cyan-300 border border-cyan-500/30 rounded-xl transition-all cursor-pointer active:scale-95"
-            title="Refrescar datos en vivo"
-          >
-            <RefreshCw className={`w-4 h-4 ${loadingCamiones || loadingItems ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center space-x-1.5 shrink-0">
+            <button
+              onClick={() => {
+                if (selectedTruck) {
+                  fetchItems(selectedTruck.id);
+                }
+                fetchCamiones();
+              }}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 rounded-xl transition-all cursor-pointer active:scale-95"
+              title="Refrescar datos en vivo"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingCamiones || loadingItems ? 'animate-spin' : ''}`} />
+            </button>
 
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="px-3 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-900/40 border border-cyan-400/40 flex items-center space-x-1.5 cursor-pointer transition-all"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Cargar Camión AP2</span>
-            <span className="sm:hidden">Cargar AP2</span>
-          </button>
-        </div>
-      </header>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-['Chakra_Petch'] font-bold text-[11px] uppercase tracking-wider rounded-xl shadow-md shadow-cyan-950 border border-cyan-400/40 flex items-center space-x-1 cursor-pointer transition-all"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Cargar AP2</span>
+            </button>
+          </div>
+        </header>
 
-      {/* 2. Vista Detallada de Consulta de Ítems (si hay un camión seleccionado) */}
-      {selectedTruck ? (
-        <main className="flex-1 p-3 sm:p-4 max-w-5xl mx-auto w-full space-y-4">
-          
-          {/* Cabecera del Camión Seleccionado */}
-          <div className="p-4 bg-[#041c38]/90 border border-cyan-500/30 rounded-2xl shadow-xl space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center space-x-2">
-                <span className="font-['Chakra_Petch'] font-black text-lg text-cyan-300 tracking-wide">
-                  NAE: {selectedTruck.numero_nae}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
-                  {selectedTruck.estado === 'EN_CONSULTA' ? '⚪ EN CONSULTA (PRECARGADO)' : `🟢 ${selectedTruck.estado}`}
-                </span>
+        {/* 2. Banner Superior Minimalista */}
+        {!selectedTruck && (
+          <div className="p-2.5 bg-gradient-to-r from-cyan-950/60 via-slate-900/90 to-blue-950/60 border border-cyan-500/30 rounded-2xl flex items-center justify-between shadow-md">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className="p-1.5 bg-cyan-500/20 rounded-lg border border-cyan-400/30 shrink-0">
+                <Snowflake className="w-3.5 h-3.5 text-cyan-300" />
               </div>
+              <p className="text-xs text-slate-200 font-medium truncate">
+                Frío, Congelado y AP2 <span className="text-[10px] text-cyan-400 block font-mono">Sin escáner • Avance físico en tiempo real</span>
+              </p>
+            </div>
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold shrink-0">
+              100% Perecederos
+            </span>
+          </div>
+        )}
 
-              <div className="flex items-center space-x-2">
-                {renderReceptionBadge(stats.receptionState)}
+        {/* 3. VISTA DETALLADA DE CONSULTA DE ÍTEMS (Camión Seleccionado) */}
+        {selectedTruck ? (
+          <div className="space-y-3 animate-fade-in">
+            
+            {/* Cabecera del Camión Seleccionado */}
+            <div className="p-3.5 bg-slate-900/90 border border-cyan-500/30 rounded-2xl shadow-xl space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-1.5">
+                  <span className="font-['Chakra_Petch'] font-black text-base text-cyan-300 tracking-wide">
+                    NAE: {selectedTruck.numero_nae}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+                    {selectedTruck.estado === 'EN_CONSULTA' ? 'EN CONSULTA' : selectedTruck.estado}
+                  </span>
+                </div>
+
                 <button
                   onClick={() => setSelectedTruck(null)}
-                  className="text-xs text-cyan-300 hover:text-white px-2.5 py-1 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/30 rounded-lg transition-all cursor-pointer"
+                  className="text-[11px] text-cyan-300 hover:text-white px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 rounded-lg transition-all cursor-pointer font-['Chakra_Petch'] font-bold"
                 >
-                  Cambiar camión
+                  Cambiar
                 </button>
               </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
+                <div className="flex items-center space-x-1.5 truncate">
+                  <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="truncate">{formatStoreDisplay(selectedTruck.tienda_codigo, selectedTruck.tienda_nombre, selectedTruck.numero_nae).fullDisplay}</span>
+                </div>
+                {renderReceptionBadge(stats.receptionState)}
+              </div>
+
+              {/* Grid 2x2 de KPIs de Avance Compacto */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-cyan-500/15">
+                
+                {/* KPI Bultos */}
+                <div className="p-2.5 bg-slate-950/80 border border-cyan-500/20 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
+                      <Package className="w-3 h-3 text-cyan-400" />
+                      <span>Bultos</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-cyan-300">{stats.pctBultos}%</span>
+                  </div>
+                  <p className="text-xs font-['Chakra_Petch'] font-black text-white">
+                    {stats.bultosAuditados} <span className="text-[10px] text-slate-400 font-normal">de {stats.bultosEsperados} bultos</span>
+                  </p>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-300"
+                      style={{ width: `${stats.pctBultos}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* KPI Unidades */}
+                <div className="p-2.5 bg-slate-950/80 border border-cyan-500/20 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
+                      <Layers className="w-3 h-3 text-emerald-400" />
+                      <span>Unidades</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-300">{stats.pctUnidades}%</span>
+                  </div>
+                  <p className="text-xs font-['Chakra_Petch'] font-black text-white">
+                    {stats.unidadesAuditadas} <span className="text-[10px] text-slate-400 font-normal">de {stats.unidadesEsperadas} un</span>
+                  </p>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300"
+                      style={{ width: `${stats.pctUnidades}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* KPI Agotados */}
+                <div className={`p-2 bg-slate-950/80 border rounded-xl flex items-center justify-between ${stats.agotadosCount > 0 ? 'border-amber-500/40 bg-amber-950/20' : 'border-cyan-500/20'}`}>
+                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-amber-300 uppercase flex items-center space-x-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>Agotados</span>
+                  </span>
+                  <span className="font-mono text-xs font-bold text-amber-300">
+                    {stats.agotadosCount} SKUs
+                  </span>
+                </div>
+
+                {/* KPI Total Ítems */}
+                <div className="p-2 bg-slate-950/80 border border-cyan-500/20 rounded-xl flex items-center justify-between">
+                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
+                    <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                    <span>Total Ítems</span>
+                  </span>
+                  <span className="font-mono text-xs font-bold text-white">
+                    {stats.totalItems} prod.
+                  </span>
+                </div>
+
+              </div>
             </div>
 
-            <div className="flex items-center space-x-2 text-xs text-slate-300 font-mono">
-              <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-              <span>{formatStoreDisplay(selectedTruck.tienda_codigo, selectedTruck.tienda_nombre, selectedTruck.numero_nae).fullDisplay}</span>
-            </div>
-
-            {/* Tarjetas KPI de Avance Físico (Bultos, Unidades, Agotados) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+            {/* Barra de Búsqueda y Filtros */}
+            <div className="p-2.5 bg-slate-900/90 border border-cyan-500/20 rounded-2xl space-y-2">
               
-              {/* KPI 1: Avance Bultos */}
-              <div className="p-3 bg-[#021124] border border-cyan-500/20 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-                    <Package className="w-3 h-3 text-cyan-400" />
-                    <span>Bultos Auditados</span>
-                  </span>
-                  <span className="text-xs font-mono font-bold text-cyan-300">{stats.pctBultos}%</span>
-                </div>
-                <p className="text-sm font-['Chakra_Petch'] font-black text-white">
-                  {stats.bultosAuditados} <span className="text-xs text-slate-400 font-normal">de {stats.bultosEsperados} bultos</span>
-                </p>
-                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
-                    style={{ width: `${stats.pctBultos}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* KPI 2: Avance Unidades */}
-              <div className="p-3 bg-[#021124] border border-cyan-500/20 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-                    <Layers className="w-3 h-3 text-emerald-400" />
-                    <span>Unidades Físicas</span>
-                  </span>
-                  <span className="text-xs font-mono font-bold text-emerald-300">{stats.pctUnidades}%</span>
-                </div>
-                <p className="text-sm font-['Chakra_Petch'] font-black text-white">
-                  {stats.unidadesAuditadas} <span className="text-xs text-slate-400 font-normal">de {stats.unidadesEsperadas} un</span>
-                </p>
-                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-500"
-                    style={{ width: `${stats.pctUnidades}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* KPI 3: Agotados en Tránsito */}
-              <div className={`p-3 bg-[#021124] border rounded-xl space-y-1 ${stats.agotadosCount > 0 ? 'border-amber-500/40' : 'border-cyan-500/20'}`}>
-                <span className="text-[10px] font-['Chakra_Petch'] font-bold text-amber-300 uppercase tracking-wider flex items-center space-x-1">
-                  <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                  <span>Agotados en Tránsito</span>
-                </span>
-                <p className="text-base font-['Chakra_Petch'] font-black text-amber-300">
-                  {stats.agotadosCount} <span className="text-xs text-slate-400 font-normal">SKUs sin stock</span>
-                </p>
-                <p className="text-[10px] text-slate-400 font-mono">Stock en tienda ≤ 0</p>
-              </div>
-
-              {/* KPI 4: Total Ítems / Estado */}
-              <div className="p-3 bg-[#021124] border border-cyan-500/20 rounded-xl space-y-1">
-                <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-                  <CheckCircle2 className="w-3 h-3 text-cyan-400" />
-                  <span>Ítems Listados</span>
-                </span>
-                <p className="text-base font-['Chakra_Petch'] font-black text-white">
-                  {stats.totalItems} <span className="text-xs text-slate-400 font-normal">productos</span>
-                </p>
-                <p className="text-[10px] text-cyan-300/80 font-mono">
-                  {stats.itemsCompletos} completados • {stats.itemsEnRecepcion} en curso
-                </p>
-              </div>
-
-            </div>
-          </div>
-
-          {/* Barra de Búsqueda y Filtros de Ítems */}
-          <div className="p-3 bg-[#03172e]/80 border border-cyan-500/20 rounded-2xl space-y-2.5">
-            
-            <div className="flex flex-col sm:flex-row gap-2">
               {/* Input de Búsqueda */}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400" />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyan-400" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Buscar por SKU, UPC, Descripción, Departamento..."
-                  className="w-full bg-[#020e1c] border border-cyan-500/30 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 transition-colors font-mono"
+                  placeholder="Buscar por SKU, UPC, Descripción..."
+                  className="w-full bg-slate-950 border border-cyan-500/30 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 font-mono"
                 />
                 {searchTerm && (
                   <button
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 )}
               </div>
 
               {/* Selector de Departamento */}
-              <div className="w-full sm:w-56 shrink-0">
-                <select
-                  value={selectedDepto}
-                  onChange={(e) => setSelectedDepto(e.target.value)}
-                  className="w-full bg-[#020e1c] border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 font-mono cursor-pointer"
-                >
-                  <option value="TODOS">Todos los departamentos</option>
-                  {departamentos.map((d, i) => (
-                    <option key={i} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+              {departamentos.length > 0 && (
+                <div>
+                  <select
+                    value={selectedDepto}
+                    onChange={(e) => setSelectedDepto(e.target.value)}
+                    className="w-full bg-slate-950 border border-cyan-500/30 rounded-xl px-2.5 py-1.5 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-400 font-mono cursor-pointer"
+                  >
+                    <option value="TODOS">Todos los departamentos</option>
+                    {departamentos.map((d, i) => (
+                      <option key={i} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-            {/* Chips de Filtrado Rápido */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              
-              {/* Botón Toggle Solo Agotados */}
-              <button
-                onClick={() => setSoloAgotados(!soloAgotados)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1.5 transition-all cursor-pointer ${
-                  soloAgotados
-                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
-                    : 'bg-[#021124] text-amber-300 hover:bg-[#06203d] border border-amber-500/30'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Solo Agotados en Tránsito ({stats.agotadosCount})</span>
-              </button>
-
-              <span className="text-slate-600 text-xs hidden sm:inline">|</span>
-
-              {/* Estados de Recepción */}
-              {(['TODOS', 'COMPLETO', 'EN_RECEPCION', 'PENDIENTE'] as FilterStatus[]).map((st) => (
+              {/* Chips de Filtrado Rápido */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                 <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                    statusFilter === st
-                      ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                      : 'bg-[#021124] text-slate-300 hover:text-white hover:bg-[#06203d] border border-cyan-500/20'
+                  onClick={() => setSoloAgotados(!soloAgotados)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1 transition-all cursor-pointer ${
+                    soloAgotados
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
+                      : 'bg-slate-950 text-amber-300 hover:bg-slate-800 border border-amber-500/30'
                   }`}
                 >
-                  {st === 'TODOS' && 'Todos los ítems'}
-                  {st === 'COMPLETO' && '🟢 Completos'}
-                  {st === 'EN_RECEPCION' && '🟡 En Recepción'}
-                  {st === 'PENDIENTE' && '⚪ Pendientes'}
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>Agotados ({stats.agotadosCount})</span>
                 </button>
-              ))}
 
-              <span className="text-[11px] text-slate-400 font-mono ml-auto">
-                Mostrando {filteredItems.length} de {items.length} productos
-              </span>
-            </div>
-
-          </div>
-
-          {/* Lista de Ítems de Perecederos */}
-          <div className="space-y-2">
-            {loadingItems ? (
-              <div className="p-12 text-center text-xs font-mono text-cyan-300 animate-pulse">
-                Cargando ítems del camión NAE #{selectedTruck.numero_nae}...
-              </div>
-            ) : filteredItems.length === 0 ? (
-              <div className="p-8 text-center bg-[#03152b]/80 border border-cyan-500/20 rounded-2xl space-y-2">
-                <Info className="w-8 h-8 text-cyan-400 mx-auto" />
-                <p className="font-['Chakra_Petch'] font-bold text-sm text-cyan-200 uppercase">
-                  No se encontraron productos con los filtros aplicados
-                </p>
-                <p className="text-xs text-slate-400">
-                  Prueba cambiando la búsqueda o quitando el filtro de agotados en tránsito.
-                </p>
-              </div>
-            ) : (
-              filteredItems.map((item) => {
-                const bEsp = Number(item.bultos_esperados || 0);
-                const bAud = Number(item.bultos_escaneados || 0);
-                const uEsp = Number(item.unidades_esperadas || 0);
-                const uAud = Number(item.unidades_escaneadas || 0);
-                const pct = bEsp > 0 ? Math.min(100, Math.round((bAud / bEsp) * 100)) : (uEsp > 0 ? Math.min(100, Math.round((uAud / uEsp) * 100)) : 0);
-
-                return (
-                  <div
-                    key={item.id || item.upc}
-                    className={`p-3 sm:p-3.5 bg-[#031429]/90 border rounded-2xl transition-all space-y-2.5 shadow-md ${
-                      item.es_agotado_transito 
-                        ? 'border-amber-500/40 bg-gradient-to-r from-[#031429]/90 via-[#031429]/90 to-amber-950/20' 
-                        : 'border-cyan-500/20 hover:border-cyan-400/50'
+                {(['TODOS', 'COMPLETO', 'EN_RECEPCION', 'PENDIENTE'] as FilterStatus[]).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      statusFilter === st
+                        ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
+                        : 'bg-slate-950 text-slate-300 hover:text-white border border-cyan-500/20'
                     }`}
                   >
-                    {/* Fila 1: SKU, UPC, Depto y Badge de Estado */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-0.5 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono font-black text-xs text-cyan-400">
-                            SKU: {item.sku}
-                          </span>
-                          <span className="font-mono text-xs text-slate-400">
-                            UPC: {item.upc}
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded border border-slate-700">
+                    {st === 'TODOS' && 'Todos'}
+                    {st === 'COMPLETO' && '🟢 100%'}
+                    {st === 'EN_RECEPCION' && '🟡 Curso'}
+                    {st === 'PENDIENTE' && '⚪ Pend.'}
+                  </button>
+                ))}
+
+                <span className="text-[10px] text-slate-400 font-mono ml-auto">
+                  {filteredItems.length}/{items.length}
+                </span>
+              </div>
+
+            </div>
+
+            {/* Listado de Ítems en Cards Verticales Compactas */}
+            <div className="space-y-2">
+              {loadingItems ? (
+                <div className="p-8 text-center text-xs font-mono text-cyan-300 animate-pulse">
+                  Cargando productos del camión NAE #{selectedTruck.numero_nae}...
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="p-6 text-center bg-slate-900/80 border border-cyan-500/20 rounded-2xl space-y-1.5">
+                  <Info className="w-6 h-6 text-cyan-400 mx-auto" />
+                  <p className="font-['Chakra_Petch'] font-bold text-xs text-cyan-200 uppercase">
+                    Sin coincidencias
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Prueba cambiando el texto o desactivando los filtros.
+                  </p>
+                </div>
+              ) : (
+                filteredItems.map((item) => {
+                  const bEsp = Number(item.bultos_esperados || 0);
+                  const bAud = Number(item.bultos_escaneados || 0);
+                  const uEsp = Number(item.unidades_esperadas || 0);
+                  const uAud = Number(item.unidades_escaneadas || 0);
+                  const pct = bEsp > 0 ? Math.min(100, Math.round((bAud / bEsp) * 100)) : (uEsp > 0 ? Math.min(100, Math.round((uAud / uEsp) * 100)) : 0);
+
+                  return (
+                    <div
+                      key={item.id || item.upc}
+                      className={`p-3 bg-slate-900/90 border rounded-2xl transition-all space-y-2 shadow-md ${
+                        item.es_agotado_transito 
+                          ? 'border-amber-500/40 bg-gradient-to-r from-slate-900/95 via-slate-900/95 to-amber-950/20' 
+                          : 'border-cyan-500/20'
+                      }`}
+                    >
+                      {/* Fila 1: SKU, UPC y Badge de Estado */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center space-x-2 text-[11px] font-mono">
+                            <span className="font-bold text-cyan-300">SKU: {item.sku}</span>
+                            <span className="text-slate-400 truncate">UPC: {item.upc}</span>
+                          </div>
+                          <h4 className="font-bold text-xs text-white uppercase tracking-wide truncate">
+                            {item.descripcion}
+                          </h4>
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded border border-slate-700 inline-block">
                             DEPTO {item.depto_codigo || '00'} - {item.depto_nombre || 'GENERAL'}
                           </span>
                         </div>
-                        <h4 className="font-bold text-sm text-white uppercase tracking-wide truncate">
-                          {item.descripcion}
-                        </h4>
+
+                        {renderItemReceptionBadge(item)}
                       </div>
 
-                      {/* Badge de Recepción del Ítem */}
-                      {renderItemReceptionBadge(item)}
-                    </div>
-
-                    {/* Fila 2: Indicador de Agotado en Tránsito (Destacado) */}
-                    {item.es_agotado_transito && (
-                      <div className="p-2 bg-amber-950/70 border border-amber-500/40 rounded-xl flex items-center justify-between text-xs text-amber-200 animate-fade-in">
-                        <div className="flex items-center space-x-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
-                          <span className="font-['Chakra_Petch'] font-bold uppercase tracking-wider text-amber-300">
-                            AGOTADO EN TRÁNSITO
+                      {/* Fila 2: Indicador Destacado de Agotado en Tránsito */}
+                      {item.es_agotado_transito && (
+                        <div className="p-1.5 bg-amber-950/80 border border-amber-500/40 rounded-xl flex items-center justify-between text-[11px] text-amber-200">
+                          <div className="flex items-center space-x-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                            <span className="font-['Chakra_Petch'] font-bold uppercase tracking-wider text-amber-300">
+                              AGOTADO EN TRÁNSITO
+                            </span>
+                          </div>
+                          <span className="font-mono text-[10px] text-amber-200/90 font-semibold">
+                            Stock tienda: {item.stock_disponible} un
                           </span>
                         </div>
-                        <span className="font-mono text-[11px] text-amber-200/90 font-semibold">
-                          Stock en tienda: {item.stock_disponible} un
-                        </span>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Fila 3: Progreso de Bultos y Unidades Físicas */}
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-cyan-500/10">
-                      
-                      {/* Bultos */}
-                      <div className="bg-[#020d1c] p-2 rounded-xl border border-cyan-500/15 flex items-center justify-between">
-                        <span className="text-[10px] font-['Chakra_Petch'] font-semibold text-slate-400 uppercase">
-                          Bultos:
-                        </span>
-                        <span className="font-mono text-xs font-bold text-cyan-300">
-                          {bAud} <span className="text-slate-500 font-normal">de {bEsp}</span>
-                        </span>
+                      {/* Fila 3: Bultos y Unidades */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-0.5 border-t border-cyan-500/10 text-xs">
+                        <div className="bg-slate-950 p-1.5 rounded-xl border border-cyan-500/15 flex items-center justify-between">
+                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
+                            Bultos:
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-cyan-300">
+                            {bAud} <span className="text-slate-500 font-normal">de {bEsp}</span>
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-950 p-1.5 rounded-xl border border-cyan-500/15 flex items-center justify-between">
+                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
+                            Unidades:
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-emerald-300">
+                            {uAud} <span className="text-slate-500 font-normal">de {uEsp} un</span>
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Unidades */}
-                      <div className="bg-[#020d1c] p-2 rounded-xl border border-cyan-500/15 flex items-center justify-between">
-                        <span className="text-[10px] font-['Chakra_Petch'] font-semibold text-slate-400 uppercase">
-                          Unidades:
-                        </span>
-                        <span className="font-mono text-xs font-bold text-emerald-300">
-                          {uAud} <span className="text-slate-500 font-normal">de {uEsp} un</span>
-                        </span>
+                      {/* Mini Barra de Progreso */}
+                      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            pct >= 100 ? 'bg-emerald-400' : pct > 0 ? 'bg-amber-400' : 'bg-transparent'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
 
                     </div>
-
-                    {/* Mini Barra de Progreso del Ítem */}
-                    <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          pct >= 100 ? 'bg-emerald-400' : pct > 0 ? 'bg-amber-400' : 'bg-transparent'
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-        </main>
-      ) : (
-        /* 3. Vista de Lista de Camiones Consultables */
-        <main className="flex-1 p-3 sm:p-4 max-w-4xl mx-auto w-full space-y-4">
-          
-          {/* Banner de Bienvenida a Camiones+ */}
-          <div className="p-4 bg-gradient-to-r from-[#031d3d] via-[#042852] to-[#021833] border border-cyan-500/30 rounded-2xl shadow-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Snowflake className="w-5 h-5 text-cyan-300" />
-                <h2 className="font-['Chakra_Petch'] font-black text-sm text-cyan-200 uppercase tracking-wider">
-                  Módulo Operativo de Perecederos
-                </h2>
-              </div>
-              <span className="text-[11px] font-mono text-cyan-400">OperaMás Suite</span>
+                  );
+                })
+              )}
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Precarga camiones de frío y congelados en formato AP2 para consulta inmediata del personal de cámara y salón. Sigue el avance de recepción en bultos y unidades en tiempo real mientras se audita en AudiMAS.
-            </p>
-          </div>
 
-          {/* Filtros de la Lista de Camiones */}
-          <div className="p-3 bg-[#03172e]/80 border border-cyan-500/20 rounded-2xl flex flex-col sm:flex-row gap-2 items-center justify-between">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400" />
+          </div>
+        ) : (
+          /* 4. VISTA DE LISTA DE CAMIONES DE PERECEDEROS (Formato Compacto) */
+          <div className="space-y-3">
+            
+            {/* Buscador de Camiones */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyan-400" />
               <input
                 type="text"
                 value={truckSearch}
                 onChange={(e) => setTruckSearch(e.target.value)}
                 placeholder="Buscar por NAE o Tienda..."
-                className="w-full bg-[#020e1c] border border-cyan-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 font-mono"
+                className="w-full bg-slate-900 border border-cyan-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 font-mono shadow-sm"
               />
             </div>
 
-            <div className="flex items-center space-x-1.5 w-full sm:w-auto overflow-x-auto">
-              <button
-                onClick={() => setTruckOriginFilter('TODOS')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
-                  truckOriginFilter === 'TODOS'
-                    ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                    : 'bg-[#021124] text-slate-300 hover:text-white border border-cyan-500/20'
-                }`}
-              >
-                Todos ({camiones.length})
-              </button>
-
-              <button
-                onClick={() => setTruckOriginFilter('CAMIONES_PLUS')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
-                  truckOriginFilter === 'CAMIONES_PLUS'
-                    ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                    : 'bg-[#021124] text-slate-300 hover:text-white border border-cyan-500/20'
-                }`}
-              >
-                Solo Camiones+
-              </button>
-
-              <button
-                onClick={() => setTruckOriginFilter('PERECEDEROS')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
-                  truckOriginFilter === 'PERECEDEROS'
-                    ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                    : 'bg-[#021124] text-slate-300 hover:text-white border border-cyan-500/20'
-                }`}
-              >
-                Frío / Congelado
-              </button>
+            <div className="px-1 flex items-center justify-between">
+              <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-cyan-400 uppercase tracking-widest">
+                CAMIONES DE PERECEDEROS ({filteredCamiones.length})
+              </h3>
+              <span className="text-[10px] font-mono text-slate-400">Frío y Congelado</span>
             </div>
-          </div>
 
-          {/* Listado de Camiones */}
-          <div className="space-y-3">
+            {/* Listado de Tarjetas de Camiones */}
             {loadingCamiones ? (
-              <div className="p-12 text-center text-xs font-mono text-cyan-300 animate-pulse">
-                Consultando camiones registrados...
+              <div className="p-8 text-center text-xs font-mono text-cyan-300 animate-pulse">
+                Consultando camiones de perecederos...
               </div>
             ) : filteredCamiones.length === 0 ? (
-              <div className="p-8 text-center bg-[#03152b]/80 border border-cyan-500/20 rounded-2xl space-y-3 shadow-xl">
-                <Truck className="w-12 h-12 text-slate-500 mx-auto" />
+              <div className="p-8 text-center bg-slate-900/90 border border-cyan-500/20 rounded-2xl space-y-2.5 shadow-xl">
+                <Truck className="w-10 h-10 text-slate-500 mx-auto" />
                 <div>
-                  <p className="font-['Chakra_Petch'] font-bold text-sm text-cyan-200 uppercase tracking-wider">
-                    No se encontraron camiones
+                  <p className="font-['Chakra_Petch'] font-bold text-xs text-cyan-200 uppercase tracking-wider">
+                    No hay camiones de perecederos registrados
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Carga un archivo en formato AP2 para precargar el primer camión de perecederos.
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Carga un archivo AP2 para precargar el primer camión de frío/congelado.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsUploadModalOpen(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-cyan-900/40 cursor-pointer"
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-cyan-950 cursor-pointer"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                   <span>Precargar Camión AP2</span>
                 </button>
               </div>
@@ -907,22 +856,22 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   <div
                     key={cam.id}
                     onClick={() => setSelectedTruck(cam)}
-                    className="p-4 bg-[#031429]/90 border border-cyan-500/20 hover:border-cyan-400/60 rounded-2xl transition-all space-y-3 shadow-lg cursor-pointer hover:bg-[#041c38]/90 group active:scale-[0.99]"
+                    className="p-3.5 bg-slate-900/90 border border-cyan-500/20 hover:border-cyan-400/60 rounded-2xl transition-all space-y-2.5 shadow-lg cursor-pointer hover:bg-slate-800/90 active:scale-[0.99] group"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <span className="font-mono font-black text-base text-cyan-300 group-hover:text-cyan-200">
+                        <span className="font-mono font-black text-sm text-cyan-300 group-hover:text-cyan-200">
                           NAE: {cam.numero_nae}
                         </span>
                         {isFromCamionesPlus && (
-                          <span className="text-[10px] font-mono px-2 py-0.5 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
                             Camiones+
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold ${
+                      <div className="flex items-center space-x-1.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-['Chakra_Petch'] font-bold ${
                           cam.estado === 'EN_CONSULTA'
                             ? 'bg-slate-800 text-slate-300 border border-slate-700'
                             : cam.estado === 'DISPONIBLE'
@@ -931,7 +880,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                             ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                             : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                         }`}>
-                          {cam.estado === 'EN_CONSULTA' ? '⚪ EN CONSULTA (PRECARGA)' : cam.estado}
+                          {cam.estado === 'EN_CONSULTA' ? 'EN CONSULTA' : cam.estado}
                         </span>
 
                         <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
@@ -939,22 +888,22 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider ${clasif.className}`}>
+                      <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[9px] uppercase tracking-wider ${clasif.className}`}>
                         {clasif.label}
                       </span>
                       {cam.tiene_reporte_ap && (
-                        <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950/80 text-cyan-300 border border-cyan-400/30">
-                          📊 Reporte AP Valorizado
+                        <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[9px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
+                          📊 Reporte AP
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
-                      <div className="flex items-center space-x-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>{formatStoreDisplay(cam.tienda_codigo, cam.tienda_nombre, cam.numero_nae).fullDisplay}</span>
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
+                      <div className="flex items-center space-x-1.5 truncate">
+                        <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span className="truncate">{formatStoreDisplay(cam.tienda_codigo, cam.tienda_nombre, cam.numero_nae).fullDisplay}</span>
                       </div>
-                      <span className="text-slate-400 text-[11px]">
+                      <span className="text-slate-400 text-[10px] shrink-0">
                         {cam.fecha_arribo || formatDateTimeArg(cam.created_at)}
                       </span>
                     </div>
@@ -962,9 +911,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                     <div className="pt-2 border-t border-cyan-500/10 flex items-center justify-between text-xs font-['Chakra_Petch'] text-cyan-300">
                       <span className="flex items-center space-x-1">
                         <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="uppercase font-bold tracking-wider">Ver ítems y avance en tiempo real</span>
+                        <span className="uppercase font-bold tracking-wider text-[11px]">Ver ítems y avance</span>
                       </span>
-                      <span className="text-slate-400 text-[11px] font-mono">
+                      <span className="text-slate-400 text-[10px] font-mono">
                         Consulta sin escáner
                       </span>
                     </div>
@@ -973,28 +922,28 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 );
               })
             )}
+
           </div>
+        )}
 
-        </main>
-      )}
+      </div>
 
-      {/* 4. Modal de Precarga de Archivo AP2 */}
+      {/* 5. Modal de Precarga de Archivo AP2 (Compacto) */}
       {isUploadModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-[#031429] border border-cyan-500/40 rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl shadow-cyan-950/80">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 animate-fade-in">
+          <div className="bg-slate-900 border border-cyan-500/40 rounded-3xl max-w-sm sm:max-w-md w-full p-4 space-y-3.5 shadow-2xl shadow-cyan-950">
             
-            {/* Header Modal */}
-            <div className="flex items-center justify-between border-b border-cyan-500/20 pb-3">
+            <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2.5">
               <div className="flex items-center space-x-2">
-                <div className="p-2 bg-cyan-500/20 rounded-xl border border-cyan-400/30">
-                  <Snowflake className="w-5 h-5 text-cyan-300" />
+                <div className="p-1.5 bg-cyan-500/20 rounded-xl border border-cyan-400/30">
+                  <Snowflake className="w-4 h-4 text-cyan-300" />
                 </div>
                 <div>
-                  <h3 className="font-['Chakra_Petch'] font-black text-sm text-white uppercase tracking-wider">
-                    Precarga de Camión Perecederos
+                  <h3 className="font-['Chakra_Petch'] font-black text-xs text-white uppercase tracking-wider">
+                    Precarga Camión Perecederos
                   </h3>
-                  <p className="text-[11px] text-cyan-300/80 font-mono">
-                    FORMATO UNIFICADO AP v2 (.XLSX / .XLS)
+                  <p className="text-[10px] text-cyan-300/80 font-mono">
+                    FORMATO AP v2 (.XLSX / .XLS)
                   </p>
                 </div>
               </div>
@@ -1008,17 +957,16 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   }
                 }}
                 disabled={isUploading}
-                className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Selector de Archivo AP2 */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-cyan-500/40 hover:border-cyan-400/80 rounded-2xl p-6 text-center space-y-2.5 cursor-pointer bg-[#020e1c]/80 hover:bg-[#03172e] transition-all group"
+                className="border-2 border-dashed border-cyan-500/40 hover:border-cyan-400/80 rounded-2xl p-5 text-center space-y-2 cursor-pointer bg-slate-950/80 hover:bg-slate-950 transition-all group"
               >
                 <input
                   type="file"
@@ -1029,94 +977,86 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   disabled={isUploading || isParsing}
                 />
 
-                <FileSpreadsheet className="w-10 h-10 text-cyan-400 mx-auto group-hover:scale-110 transition-transform" />
+                <FileSpreadsheet className="w-8 h-8 text-cyan-400 mx-auto group-hover:scale-110 transition-transform" />
                 <div>
-                  <p className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wider">
-                    {selectedFile ? selectedFile.name : 'Haz clic o arrastra el archivo AP v2'}
+                  <p className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wider truncate">
+                    {selectedFile ? selectedFile.name : 'Toca para seleccionar archivo AP v2'}
                   </p>
                   <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                    Excel con NAE, Depto, SKU, Descripción, Bultos, Unidades y Stock on Hand
+                    Excel con NAE, Depto, SKU, Bultos y Stock
                   </p>
                 </div>
               </div>
 
               {isParsing && (
-                <div className="p-3 bg-cyan-950/60 border border-cyan-500/30 rounded-xl text-center text-xs font-mono text-cyan-300 animate-pulse">
+                <div className="p-2.5 bg-cyan-950/60 border border-cyan-500/30 rounded-xl text-center text-xs font-mono text-cyan-300 animate-pulse">
                   Analizando estructura del archivo AP2...
                 </div>
               )}
 
-              {/* Previsualización del Camión Analizado */}
               {previewData && (
-                <div className="p-3.5 bg-[#020d1c] border border-cyan-500/30 rounded-2xl space-y-2.5 animate-fade-in">
-                  <div className="flex items-center justify-between border-b border-cyan-500/15 pb-2">
-                    <span className="font-['Chakra_Petch'] font-black text-sm text-cyan-300">
+                <div className="p-3 bg-slate-950 border border-cyan-500/30 rounded-2xl space-y-2 animate-fade-in text-xs">
+                  <div className="flex items-center justify-between border-b border-cyan-500/15 pb-1.5">
+                    <span className="font-['Chakra_Petch'] font-black text-xs text-cyan-300">
                       NAE #{previewData.numero_nae}
                     </span>
-                    <span className="text-xs font-mono text-slate-300">
+                    <span className="text-[11px] font-mono text-slate-300">
                       {previewData.tienda_codigo} - {previewData.tienda_nombre}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                    <div className="p-2 bg-[#041528] rounded-xl">
-                      <span className="text-[10px] text-slate-400 block">Total SKUs</span>
+                  <div className="grid grid-cols-4 gap-1.5 text-center">
+                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                      <span className="text-[9px] text-slate-400 block">SKUs</span>
                       <span className="font-bold text-white font-mono">{previewData.totalSKUs}</span>
                     </div>
-                    <div className="p-2 bg-[#041528] rounded-xl">
-                      <span className="text-[10px] text-slate-400 block">Bultos</span>
+                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                      <span className="text-[9px] text-slate-400 block">Bultos</span>
                       <span className="font-bold text-cyan-300 font-mono">{previewData.totalBultos}</span>
                     </div>
-                    <div className="p-2 bg-[#041528] rounded-xl">
-                      <span className="text-[10px] text-slate-400 block">Unidades</span>
+                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                      <span className="text-[9px] text-slate-400 block">Unidades</span>
                       <span className="font-bold text-emerald-300 font-mono">{previewData.totalUnidades}</span>
                     </div>
-                    <div className="p-2 bg-[#041528] rounded-xl">
-                      <span className="text-[10px] text-amber-300 block">Agotados</span>
+                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                      <span className="text-[9px] text-amber-300 block">Agotados</span>
                       <span className="font-bold text-amber-400 font-mono">{previewData.agotadosTransitoCount}</span>
                     </div>
                   </div>
 
-                  <div className="p-2.5 bg-blue-950/60 border border-blue-500/30 rounded-xl text-[11px] text-blue-200 space-y-1">
-                    <p className="font-bold flex items-center space-x-1">
-                      <Info className="w-3.5 h-3.5 text-blue-300 shrink-0" />
-                      <span>Regla de Precarga en Camiones+:</span>
-                    </p>
-                    <p className="leading-tight text-slate-300">
-                      Este camión se guardará en estado <strong className="text-cyan-300">EN_CONSULTA</strong> para ser visible únicamente en Camiones+. Cuando llegue físicamente y se suba en AudiMAS, se habilitará para escaneo sin perder la consulta aquí.
-                    </p>
+                  <div className="p-2 bg-blue-950/60 border border-blue-500/30 rounded-xl text-[10px] text-blue-200">
+                    Se guardará en estado <strong className="text-cyan-300">EN_CONSULTA</strong> para consulta exclusiva en Camiones+.
                   </div>
                 </div>
               )}
 
-              {/* Mensajes de Error y Progreso */}
               {uploadError && (
-                <div className="p-3 bg-red-950/80 border border-red-500/40 rounded-xl text-xs text-red-300 space-y-1">
-                  <p className="font-bold flex items-center space-x-1.5">
-                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                    <span>Error en la carga:</span>
+                <div className="p-2.5 bg-red-950/80 border border-red-500/40 rounded-xl text-xs text-red-300 space-y-0.5">
+                  <p className="font-bold flex items-center space-x-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    <span>Error:</span>
                   </p>
                   <p className="font-mono text-[11px]">{uploadError}</p>
                 </div>
               )}
 
               {uploadSuccess && (
-                <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 space-y-1">
-                  <p className="font-bold flex items-center space-x-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>¡Carga exitosa!</span>
+                <div className="p-2.5 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 space-y-0.5">
+                  <p className="font-bold flex items-center space-x-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>¡Listo!</span>
                   </p>
                   <p className="font-mono text-[11px]">{uploadSuccess}</p>
                 </div>
               )}
 
               {isUploading && (
-                <div className="space-y-1.5 p-3 bg-[#020e1c] border border-cyan-500/30 rounded-xl">
-                  <div className="flex justify-between text-xs font-mono text-cyan-300">
-                    <span>{uploadProgressText || 'Guardando camión en Camiones+...'}</span>
+                <div className="space-y-1 p-2.5 bg-slate-950 border border-cyan-500/30 rounded-xl">
+                  <div className="flex justify-between text-[11px] font-mono text-cyan-300">
+                    <span>{uploadProgressText || 'Guardando camión...'}</span>
                     <span>{uploadProgress}%</span>
                   </div>
-                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
@@ -1127,7 +1067,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
             </div>
 
-            {/* Botones de Acción */}
             <div className="flex items-center justify-end space-x-2 pt-2 border-t border-cyan-500/20">
               <button
                 onClick={() => {
@@ -1137,7 +1076,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   setUploadError(null);
                 }}
                 disabled={isUploading}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
               >
                 Cancelar
               </button>
@@ -1145,14 +1084,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               <button
                 onClick={handleConfirmUpload}
                 disabled={!previewData || isUploading || isParsing}
-                className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-900/40 flex items-center space-x-2 cursor-pointer transition-all active:scale-95"
+                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-950 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
               >
                 {isUploading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                 )}
-                <span>Confirmar Precarga</span>
+                <span>Confirmar</span>
               </button>
             </div>
 

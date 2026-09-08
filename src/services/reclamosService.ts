@@ -256,11 +256,21 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
   for (const camion of camionesCerrados) {
     const esParcial = isCamionCierreParcial(camion);
 
-    // Buscar reclamo existente en la base de datos de Supabase por nae_id O por nae_numero
+    // Buscar reclamo existente en la base de datos de Supabase por id, rec_${camion.id}, nae_id O por nae_numero
     let reclamo = dbReclamos.find(r => 
+      (r.id && (r.id === `rec_${camion.id}` || r.id === camion.id)) ||
       (r.nae_id && r.nae_id === camion.id) || 
       (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
     );
+
+    // Si se encontró el reclamo pero le faltaban datos de vinculación en DB, normalizarlos
+    if (reclamo) {
+      if (!reclamo.nae_id) reclamo.nae_id = camion.id;
+      if (!reclamo.nae_numero && camion.numero_nae) reclamo.nae_numero = camion.numero_nae.trim();
+      if (!reclamo.tienda_codigo && camion.tienda_codigo) reclamo.tienda_codigo = camion.tienda_codigo;
+      if (!reclamo.tienda_nombre && camion.tienda_nombre) reclamo.tienda_nombre = camion.tienda_nombre;
+      if (!reclamo.ticket_magma && (reclamo as any).nro_ticket) reclamo.ticket_magma = (reclamo as any).nro_ticket;
+    }
 
     try {
       const { data: items } = await supabase
@@ -306,19 +316,27 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         if (Boolean(reclamo.seleccion_manual)) {
           reclamo = {
             ...reclamo,
-            monto_total_reclamado: Number(reclamo.monto_total_reclamado || 0),
-            cant_skus_afectados: Number(reclamo.cant_skus_afectados || 0),
-            cant_unidades_afectadas: Number(reclamo.cant_unidades_afectadas || 0),
+            nae_id: reclamo.nae_id || camion.id,
+            nae_numero: reclamo.nae_numero || camion.numero_nae,
+            tienda_codigo: reclamo.tienda_codigo || camion.tienda_codigo,
+            tienda_nombre: reclamo.tienda_nombre || camion.tienda_nombre,
+            monto_total_reclamado: Number(reclamo.monto_total_reclamado ?? 0),
+            cant_skus_afectados: Number(reclamo.cant_skus_afectados ?? 0),
+            cant_unidades_afectadas: Number(reclamo.cant_unidades_afectadas ?? 0),
             items_seleccionados: Array.isArray(reclamo.items_seleccionados) ? reclamo.items_seleccionados : [],
             seleccion_manual: true,
             fecha_cierre_auditoria: fechaCierre,
-            monto_discrepancias_total: disc.totalMontoReclamado,
-            updated_at: new Date().toISOString()
+            monto_discrepancias_total: disc.totalMontoReclamado, // Referencia teórica de auditoría
+            updated_at: reclamo.updated_at || new Date().toISOString()
           };
         } else {
           // Si no es manual, recalcular automáticamente con los datos de la auditoría
           reclamo = {
             ...reclamo,
+            nae_id: reclamo.nae_id || camion.id,
+            nae_numero: reclamo.nae_numero || camion.numero_nae,
+            tienda_codigo: reclamo.tienda_codigo || camion.tienda_codigo,
+            tienda_nombre: reclamo.tienda_nombre || camion.tienda_nombre,
             fecha_cierre_auditoria: fechaCierre,
             monto_total_reclamado: disc.totalMontoReclamado,
             monto_discrepancias_total: disc.totalMontoReclamado,
@@ -330,7 +348,9 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
           };
         }
         try {
-          await supabase.from('reclamos_magma').upsert([reclamo], { onConflict: 'id' });
+          const payloadSync: any = { ...reclamo };
+          if (reclamo.ticket_magma) payloadSync.nro_ticket = reclamo.ticket_magma;
+          await supabase.from('reclamos_magma').upsert([payloadSync], { onConflict: 'id' });
         } catch (e) {}
         resultReclamos.push(reclamo);
         continue;
@@ -357,7 +377,9 @@ export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<Reclamo
         };
 
         try {
-          await supabase.from('reclamos_magma').upsert([newReclamo], { onConflict: 'id' });
+          const payloadNew: any = { ...newReclamo };
+          if (newReclamo.ticket_magma) payloadNew.nro_ticket = newReclamo.ticket_magma;
+          await supabase.from('reclamos_magma').upsert([payloadNew], { onConflict: 'id' });
         } catch (e) {
           console.warn('⚠️ Error guardando nuevo reclamo inicial en Supabase:', e);
         }
@@ -422,18 +444,50 @@ export const updateReclamoMagma = async (
       updated.cant_unidades_afectadas = Number(updates.cant_unidades_afectadas);
     }
     if (updates.items_seleccionados !== undefined) {
-      updated.items_seleccionados = updates.items_seleccionados;
+      updated.items_seleccionados = Array.isArray(updates.items_seleccionados) ? updates.items_seleccionados : [];
     }
+  }
+
+  // Sincronizar nro_ticket con ticket_magma para compatibilidad total con el esquema de base de datos
+  const payloadToPersist: any = { ...updated };
+  if (updated.ticket_magma) {
+    payloadToPersist.nro_ticket = updated.ticket_magma;
+  } else if ((updated as any).nro_ticket) {
+    payloadToPersist.ticket_magma = (updated as any).nro_ticket;
+    updated.ticket_magma = (updated as any).nro_ticket;
   }
 
   // 2. Persistir directamente en la tabla reclamos_magma de Supabase
   try {
     const { error } = await supabase
       .from('reclamos_magma')
-      .upsert([updated], { onConflict: 'id' });
+      .upsert([payloadToPersist], { onConflict: 'id' });
 
     if (error) {
-      console.warn('⚠️ Error al actualizar reclamo en Supabase:', error.message);
+      console.warn('⚠️ Error al actualizar reclamo en Supabase (intentando fallback con campos esenciales):', error.message);
+      // Fallback seguro en caso de restricción en columnas opcionales
+      const safePayload = {
+        id: updated.id,
+        nae_id: updated.nae_id,
+        nae_numero: updated.nae_numero,
+        estado: updated.estado,
+        monto_total_reclamado: Number(updated.monto_total_reclamado ?? 0),
+        monto_discrepancias_total: Number(updated.monto_discrepancias_total ?? 0),
+        cant_skus_afectados: Number(updated.cant_skus_afectados ?? 0),
+        cant_unidades_afectadas: Number(updated.cant_unidades_afectadas ?? 0),
+        items_seleccionados: updated.items_seleccionados || [],
+        seleccion_manual: Boolean(updated.seleccion_manual),
+        nro_ticket: updated.ticket_magma || undefined,
+        ticket_magma: updated.ticket_magma || undefined,
+        observaciones: updated.observaciones || undefined,
+        monto_liquidado: updated.monto_liquidado !== undefined ? Number(updated.monto_liquidado) : undefined,
+        fecha_cierre_auditoria: updated.fecha_cierre_auditoria || undefined,
+        fecha_ultima_exportacion: updated.fecha_ultima_exportacion || undefined,
+        fecha_reclamado_magma: updated.fecha_reclamado_magma || undefined,
+        fecha_resolucion: updated.fecha_resolucion || undefined,
+        updated_at: updated.updated_at
+      };
+      await supabase.from('reclamos_magma').upsert([safePayload], { onConflict: 'id' });
     }
   } catch (err) {
     console.warn('⚠️ No se pudo conectar a Supabase para actualizar el reclamo:', err);

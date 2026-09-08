@@ -560,4 +560,59 @@ GRANT ALL ON TABLE tiendas TO anon, authenticated, service_role;
 GRANT ALL ON TABLE sectores TO anon, authenticated, service_role;
 GRANT ALL ON TABLE profiles TO anon, authenticated, service_role;
 
+-- =============================================================================
+-- 10. TABLA: reclamos_magma
+-- Gestión y trazabilidad de diferencias de auditoría y tickets de reclamos Magma
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS reclamos_magma (
+    id VARCHAR(100) PRIMARY KEY,
+    nae_id UUID,
+    nae_numero VARCHAR(50),
+    tienda_codigo VARCHAR(50),
+    tienda_nombre VARCHAR(150),
+    estado VARCHAR(30) DEFAULT 'PENDIENTE' CHECK (estado IN ('PENDIENTE', 'RECLAMADO', 'ACEPTADO', 'RECHAZADO')),
+    nro_ticket VARCHAR(100),
+    ticket_magma VARCHAR(100),
+    monto_total_reclamado NUMERIC DEFAULT 0,
+    monto_discrepancias_total NUMERIC DEFAULT 0,
+    cant_skus_afectados NUMERIC DEFAULT 0,
+    cant_unidades_afectadas NUMERIC DEFAULT 0,
+    items_seleccionados JSONB DEFAULT '[]'::jsonb,
+    seleccion_manual BOOLEAN DEFAULT FALSE,
+    monto_liquidado NUMERIC,
+    observaciones TEXT,
+    fecha_cierre_auditoria TIMESTAMP WITH TIME ZONE,
+    fecha_ultima_exportacion TIMESTAMP WITH TIME ZONE,
+    fecha_reclamado_magma TIMESTAMP WITH TIME ZONE,
+    fecha_resolucion TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Migraciones seguras para tablas existentes
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS tienda_codigo VARCHAR(50);
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS tienda_nombre VARCHAR(150);
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS ticket_magma VARCHAR(100);
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS nro_ticket VARCHAR(100);
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS items_seleccionados JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS seleccion_manual BOOLEAN DEFAULT FALSE;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS monto_total_reclamado NUMERIC DEFAULT 0;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS monto_discrepancias_total NUMERIC DEFAULT 0;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS cant_skus_afectados NUMERIC DEFAULT 0;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS cant_unidades_afectadas NUMERIC DEFAULT 0;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS nae_id UUID;
+ALTER TABLE reclamos_magma ADD COLUMN IF NOT EXISTS nae_numero VARCHAR(50);
+
+-- Índices de búsqueda y concurrencia
+CREATE INDEX IF NOT EXISTS idx_reclamos_magma_nae_id ON reclamos_magma(nae_id);
+CREATE INDEX IF NOT EXISTS idx_reclamos_magma_nae_numero ON reclamos_magma(nae_numero);
+CREATE INDEX IF NOT EXISTS idx_reclamos_magma_estado ON reclamos_magma(estado);
+
+-- RLS y permisos
+ALTER TABLE reclamos_magma ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acceso total reclamos_magma" ON reclamos_magma;
+CREATE POLICY "Acceso total reclamos_magma" ON reclamos_magma FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON TABLE reclamos_magma TO anon, authenticated, service_role;
+
+
 

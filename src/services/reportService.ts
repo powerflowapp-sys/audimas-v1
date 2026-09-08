@@ -717,18 +717,30 @@ export const cerrarCamionNae = async (
     };
 
     try {
-      // Verificar si ya existía un reclamo con selección manual previa
-      const { data: existingRec } = await supabase
+      // Verificar si ya existía un reclamo con selección manual previa (por nae_id o por id = rec_${naeId})
+      let existingRec: any = null;
+      const { data: recByNae } = await supabase
         .from('reclamos_magma')
         .select('*')
         .eq('nae_id', naeId)
         .maybeSingle();
 
+      if (recByNae) {
+        existingRec = recByNae;
+      } else {
+        const { data: recById } = await supabase
+          .from('reclamos_magma')
+          .select('*')
+          .eq('id', `rec_${naeId}`)
+          .maybeSingle();
+        if (recById) existingRec = recById;
+      }
+
       if (existingRec && existingRec.seleccion_manual) {
-        newReclamo.monto_total_reclamado = existingRec.monto_total_reclamado;
-        newReclamo.cant_skus_afectados = existingRec.cant_skus_afectados;
-        newReclamo.cant_unidades_afectadas = existingRec.cant_unidades_afectadas;
-        newReclamo.items_seleccionados = existingRec.items_seleccionados;
+        newReclamo.monto_total_reclamado = Number(existingRec.monto_total_reclamado ?? 0);
+        newReclamo.cant_skus_afectados = Number(existingRec.cant_skus_afectados ?? 0);
+        newReclamo.cant_unidades_afectadas = Number(existingRec.cant_unidades_afectadas ?? 0);
+        newReclamo.items_seleccionados = Array.isArray(existingRec.items_seleccionados) ? existingRec.items_seleccionados : [];
         newReclamo.seleccion_manual = true;
         newReclamo.monto_discrepancias_total = Number(totalMontoReclamado.toFixed(2));
       } else {
@@ -741,6 +753,7 @@ export const cerrarCamionNae = async (
       if (currentCamion?.numero_nae) {
         await supabase.from('reclamos_magma').delete().eq('nae_numero', currentCamion.numero_nae.trim());
       }
+      if (newReclamo.ticket_magma) newReclamo.nro_ticket = newReclamo.ticket_magma;
       await supabase.from('reclamos_magma').upsert([newReclamo], { onConflict: 'id' });
       reclamoGenerado = true;
     } catch (e) {

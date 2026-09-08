@@ -80,8 +80,10 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
           // Inicializar selección calculando sobre el camión enriquecido (respetando esParcial)
           const disc = calcularDiscrepanciasReclamo(loadedItems, finalCamion);
           
-          if (reclamo.seleccion_manual || Array.isArray(reclamo.items_seleccionados)) {
+          if (reclamo.seleccion_manual) {
             setSelectedKeys(new Set(reclamo.items_seleccionados || []));
+          } else if (Array.isArray(reclamo.items_seleccionados) && reclamo.items_seleccionados.length > 0) {
+            setSelectedKeys(new Set(reclamo.items_seleccionados));
           } else {
             // Por defecto, seleccionar el 100% de los ítems discrepantes de lo auditado
             setSelectedKeys(new Set(disc.itemsDiscrepantes.map(d => d.itemKey)));
@@ -194,18 +196,26 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
     setIsSaving(true);
     try {
       const keysArray = Array.from(selectedKeys);
+      const isCero = keysArray.length === 0;
+      const finalMonto = isCero ? 0 : totalSeleccionadoMagma;
+      const finalSkus = isCero ? 0 : countSelectedSkus;
+      const finalUnits = isCero ? 0 : countSelectedUnits;
+
+      const naeIdReal = reclamo.nae_id || activeCamion?.id || (reclamo.id.startsWith('rec_') ? reclamo.id.replace('rec_', '') : '');
+      const naeNumeroReal = reclamo.nae_numero || activeCamion?.numero_nae || '';
+
       const updated = await updateReclamoMagma(reclamo.id, {
-        nae_id: reclamo.nae_id,
-        nae_numero: reclamo.nae_numero,
-        tienda_codigo: reclamo.tienda_codigo,
-        tienda_nombre: reclamo.tienda_nombre,
+        nae_id: naeIdReal,
+        nae_numero: naeNumeroReal,
+        tienda_codigo: reclamo.tienda_codigo || activeCamion?.tienda_codigo,
+        tienda_nombre: reclamo.tienda_nombre || activeCamion?.tienda_nombre,
         estado: reclamo.estado,
         ticket_magma: reclamo.ticket_magma,
         items_seleccionados: keysArray,
-        monto_total_reclamado: totalSeleccionadoMagma,
+        monto_total_reclamado: finalMonto,
         monto_discrepancias_total: totalDiscrepanciasAuditoria,
-        cant_skus_afectados: countSelectedSkus,
-        cant_unidades_afectadas: countSelectedUnits,
+        cant_skus_afectados: finalSkus,
+        cant_unidades_afectadas: finalUnits,
         seleccion_manual: true
       });
       if (onSelectionSaved) onSelectionSaved(updated);

@@ -1080,6 +1080,7 @@ export const App: React.FC = () => {
         return (
           <CamionesPlusView
             onBack={() => navigateTo('HUB')}
+            onHome={() => navigateTo('HUB')}
             collaboratorName={collaborator}
             initialNaeId={activeNaeId}
           />

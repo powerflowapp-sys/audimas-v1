@@ -15,16 +15,20 @@ import {
   Eye,
   Info,
   Package,
-  Layers
+  Layers,
+  Lock,
+  Clock
 } from 'lucide-react';
 import { CamionNAE, AuditoriaItem, CamionManifiestoPreview } from '../types';
 import { supabase } from '../services/supabase';
 import { parseAgotadosAPv2, uploadCamionManifiesto, formatStoreDisplay } from '../services/excelParsers';
 import { formatDateTimeArg } from '../services/reportService';
 import { getBadgeClasificacionCarga } from '../utils/cargoUtils';
+import { BottomNavCapsule } from './BottomNavCapsule';
 
 interface CamionesPlusViewProps {
   onBack: () => void;
+  onHome?: () => void;
   collaboratorName?: string;
   initialNaeId?: string | null;
 }
@@ -33,6 +37,7 @@ type FilterStatus = 'TODOS' | 'COMPLETO' | 'EN_RECEPCION' | 'PENDIENTE';
 
 export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   onBack,
+  onHome,
   collaboratorName = 'OPERADOR 1',
   initialNaeId = null
 }) => {
@@ -85,7 +90,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         const isSecoMoreno = nae.startsWith('15');
         const isSecoEscobar = nae.startsWith('8') || nae.startsWith('08') || nae.startsWith('008');
 
-        // Si es seco y no proviene de Camiones+, excluirlo rotundamente
         if ((isSecoMoreno || isSecoEscobar) && cam.origen_carga !== 'CAMIONES_PLUS') {
           return false;
         }
@@ -383,28 +387,38 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     });
   }, [camiones, truckSearch]);
 
-  // Helper de Insignia de Recepción Global
-  const renderReceptionBadge = (state: 'COMPLETO' | 'EN_RECEPCION' | 'PENDIENTE', className: string = '') => {
-    if (state === 'COMPLETO') {
+  // Renderizador de Badges de Estado idéntico al de AudiMAS
+  const renderEstadoBadge = (cam: CamionNAE) => {
+    const estUpper = (cam?.estado || '').trim().toUpperCase();
+
+    if (estUpper === 'PENDIENTE' || estUpper === 'DISPONIBLE') {
       return (
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1 shrink-0 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span>🟢 COMPLETO (100%)</span>
+        <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/30 flex items-center space-x-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+          <span>{estUpper === 'DISPONIBLE' ? 'DISPONIBLE' : 'PENDIENTE'}</span>
         </span>
       );
     }
-    if (state === 'EN_RECEPCION') {
+    if (estUpper === 'EN_CONSULTA') {
       return (
-        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1 shrink-0 ${className}`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-          <span>🟡 EN RECEPCIÓN</span>
+        <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 flex items-center space-x-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+          <span>EN CONSULTA</span>
+        </span>
+      );
+    }
+    if (estUpper === 'EN_PROCESO') {
+      return (
+        <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 flex items-center space-x-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <span>EN PROCESO</span>
         </span>
       );
     }
     return (
-      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-['Chakra_Petch'] font-bold bg-slate-700/40 text-slate-300 border border-slate-600/40 flex items-center space-x-1 shrink-0 ${className}`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-        <span>⚪ PENDIENTE</span>
+      <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-purple-500/20 text-purple-300 border-purple-500/30 flex items-center space-x-1">
+        <Lock className="w-3 h-3 text-purple-400" />
+        <span>FINALIZADO</span>
       </span>
     );
   };
@@ -434,84 +448,88 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
       );
     }
     return (
-      <span className="px-2 py-0.5 rounded-md text-[10px] font-['Chakra_Petch'] font-bold bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
+      <span className="px-2 py-0.5 rounded-md text-[10px] font-['Chakra_Petch'] font-bold bg-[#030e1f] text-slate-400 border border-slate-700 shrink-0">
         ⚪ Pendiente
       </span>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-3 md:p-4 select-none pb-28 font-sans">
-      <div className="max-w-md md:max-w-lg mx-auto space-y-3.5">
+    <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-32 select-none">
+      
+      {/* 1. Header Principal Idéntico a AudiMAS */}
+      <header className="sticky top-0 z-30 bg-[#061224]/95 backdrop-blur-md border-b border-sky-500/20 px-4 py-3 flex items-center justify-between shadow-lg">
+        <div className="flex items-center space-x-2.5">
+          <div 
+            onClick={() => {
+              if (selectedTruck) {
+                setSelectedTruck(null);
+              } else if (onHome) {
+                onHome();
+              } else {
+                onBack();
+              }
+            }}
+            className="w-9 h-9 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-xl flex items-center justify-center font-['Chakra_Petch'] font-black text-xl text-white shadow-lg shadow-cyan-600/40 border border-cyan-400/30 cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+            title="Ir al Hub Central"
+          >
+            <Snowflake className="w-5 h-5 text-white animate-spin-slow" />
+          </div>
+          <div>
+            <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-0.5">
+              <span className="font-bold text-base text-cyan-400">CAMIONES</span>
+              <span className="font-black text-lg text-white">+</span>
+              <span className="text-xs text-sky-300 font-bold ml-1">V1</span>
+            </h1>
+            <p className="text-[10px] text-sky-300/80 font-mono tracking-widest uppercase">
+              GESTIÓN DE PERECEDEROS (FRÍO Y AP2)
+            </p>
+          </div>
+        </div>
+
+        {/* Acciones de la Cabecera */}
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={() => {
+              if (selectedTruck) {
+                fetchItems(selectedTruck.id);
+              }
+              fetchCamiones();
+            }}
+            className="p-2 bg-[#061e38] hover:bg-[#0a2e56] text-cyan-300 border border-sky-500/30 rounded-xl transition-all cursor-pointer active:scale-95"
+            title="Refrescar datos en vivo"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingCamiones || loadingItems ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-md shadow-blue-600/30 border border-sky-400/30 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Cargar AP2</span>
+          </button>
+        </div>
+      </header>
+
+      {/* 2. Contenedor Centralizado Idéntico a AudiMAS (max-w-md mx-auto w-full) */}
+      <main className="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
         
-        {/* 1. Header Compacto Mobile-First */}
-        <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border border-cyan-500/30 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between shadow-xl">
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <button
-              onClick={() => {
-                if (selectedTruck) {
-                  setSelectedTruck(null);
-                } else {
-                  onBack();
-                }
-              }}
-              className="p-2 bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 rounded-xl text-cyan-300 transition-all cursor-pointer active:scale-95 shrink-0"
-              title={selectedTruck ? 'Volver a lista de camiones' : 'Volver al Menú'}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-
-            <div className="min-w-0">
-              <div className="flex items-center space-x-1.5">
-                <Snowflake className="w-4 h-4 text-cyan-400 shrink-0 animate-spin-slow" />
-                <h1 className="font-['Chakra_Petch'] font-black text-sm text-white tracking-wider flex items-center space-x-1 truncate">
-                  <span>CAMIONES</span>
-                  <span className="text-cyan-400">+</span>
-                </h1>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-500/40 rounded-full font-bold shrink-0">
-                  PERECEDEROS
-                </span>
-              </div>
-              <p className="text-[10px] text-cyan-300/80 font-mono tracking-wide truncate">
-                CONSULTA FRÍO Y AVANCE EN VIVO
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-1.5 shrink-0">
-            <button
-              onClick={() => {
-                if (selectedTruck) {
-                  fetchItems(selectedTruck.id);
-                }
-                fetchCamiones();
-              }}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 rounded-xl transition-all cursor-pointer active:scale-95"
-              title="Refrescar datos en vivo"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingCamiones || loadingItems ? 'animate-spin' : ''}`} />
-            </button>
-
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-2.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-['Chakra_Petch'] font-bold text-[11px] uppercase tracking-wider rounded-xl shadow-md shadow-cyan-950 border border-cyan-400/40 flex items-center space-x-1 cursor-pointer transition-all"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Cargar AP2</span>
-            </button>
-          </div>
-        </header>
-
-        {/* 2. Banner Superior Minimalista */}
+        {/* Banner Minimalista Superior */}
         {!selectedTruck && (
-          <div className="p-2.5 bg-gradient-to-r from-cyan-950/60 via-slate-900/90 to-blue-950/60 border border-cyan-500/30 rounded-2xl flex items-center justify-between shadow-md">
-            <div className="flex items-center space-x-2 min-w-0">
+          <div className="p-3 bg-[#061838]/80 border border-sky-500/30 rounded-2xl flex items-center justify-between shadow-lg">
+            <div className="flex items-center space-x-2.5 min-w-0">
               <div className="p-1.5 bg-cyan-500/20 rounded-lg border border-cyan-400/30 shrink-0">
-                <Snowflake className="w-3.5 h-3.5 text-cyan-300" />
+                <Snowflake className="w-4 h-4 text-cyan-300" />
               </div>
-              <p className="text-xs text-slate-200 font-medium truncate">
-                Frío, Congelado y AP2 <span className="text-[10px] text-cyan-400 block font-mono">Sin escáner • Avance físico en tiempo real</span>
-              </p>
+              <div className="min-w-0">
+                <p className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wide truncate">
+                  Visor de Frío, Congelado y AP2
+                </p>
+                <p className="text-[10px] text-sky-300/80 font-mono truncate">
+                  Consulta de stock y recepción en tiempo real
+                </p>
+              </div>
             </div>
             <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold shrink-0">
               100% Perecederos
@@ -519,63 +537,87 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
           </div>
         )}
 
-        {/* 3. VISTA DETALLADA DE CONSULTA DE ÍTEMS (Camión Seleccionado) */}
+        {/* 3. VISTA DETALLADA DEL CAMIÓN SELECCIONADO */}
         {selectedTruck ? (
-          <div className="space-y-3 animate-fade-in">
+          <div className="space-y-3.5 animate-fade-in">
             
-            {/* Cabecera del Camión Seleccionado */}
-            <div className="p-3.5 bg-slate-900/90 border border-cyan-500/30 rounded-2xl shadow-xl space-y-2.5">
+            {/* Tarjeta Cabecera del Camión */}
+            <div className="p-4 bg-[#051329]/90 border border-sky-500/30 rounded-2xl shadow-xl space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center space-x-1.5">
-                  <span className="font-['Chakra_Petch'] font-black text-base text-cyan-300 tracking-wide">
+                <div className="flex items-center space-x-2">
+                  <span className="font-mono font-black text-sm text-sky-400">
                     NAE: {selectedTruck.numero_nae}
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/40">
-                    {selectedTruck.estado === 'EN_CONSULTA' ? 'EN CONSULTA' : selectedTruck.estado}
-                  </span>
+                  {selectedTruck.origen_carga === 'CAMIONES_PLUS' && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 bg-cyan-950 text-cyan-300 border border-cyan-400/40 rounded-full font-bold">
+                      Camiones+
+                    </span>
+                  )}
                 </div>
 
-                <button
-                  onClick={() => setSelectedTruck(null)}
-                  className="text-[11px] text-cyan-300 hover:text-white px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 rounded-lg transition-all cursor-pointer font-['Chakra_Petch'] font-bold"
-                >
-                  Cambiar
-                </button>
+                <div className="flex items-center space-x-1.5">
+                  {renderEstadoBadge(selectedTruck)}
+                  <button
+                    onClick={() => setSelectedTruck(null)}
+                    className="text-[11px] text-sky-300 hover:text-white px-2 py-1 bg-[#0c2847] hover:bg-[#163a75] border border-sky-500/30 rounded-lg transition-all cursor-pointer font-['Chakra_Petch'] font-bold"
+                  >
+                    Cambiar
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
+              {/* Insignias de Carga */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                {(() => {
+                  const clasif = getBadgeClasificacionCarga(selectedTruck);
+                  return (
+                    <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
+                      <span>{clasif.label}</span>
+                    </span>
+                  );
+                })()}
+                {selectedTruck.tiene_reporte_ap && (
+                  <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
+                    📊 REPORTE AP
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
                 <div className="flex items-center space-x-1.5 truncate">
-                  <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                   <span className="truncate">{formatStoreDisplay(selectedTruck.tienda_codigo, selectedTruck.tienda_nombre, selectedTruck.numero_nae).fullDisplay}</span>
                 </div>
-                {renderReceptionBadge(stats.receptionState)}
+                <span className="text-slate-400 text-[11px] font-mono shrink-0">
+                  {selectedTruck.fecha_arribo || formatDateTimeArg(selectedTruck.created_at)}
+                </span>
               </div>
 
-              {/* Grid 2x2 de KPIs de Avance Compacto */}
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-cyan-500/15">
+              {/* KPIs de Avance Físico 2x2 */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-sky-500/15">
                 
-                {/* KPI Bultos */}
-                <div className="p-2.5 bg-slate-950/80 border border-cyan-500/20 rounded-xl space-y-1">
+                {/* Bultos */}
+                <div className="p-2.5 bg-[#030e1f] border border-sky-500/20 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
-                      <Package className="w-3 h-3 text-cyan-400" />
+                      <Package className="w-3 h-3 text-sky-400" />
                       <span>Bultos</span>
                     </span>
-                    <span className="text-[11px] font-mono font-bold text-cyan-300">{stats.pctBultos}%</span>
+                    <span className="text-[11px] font-mono font-bold text-sky-300">{stats.pctBultos}%</span>
                   </div>
                   <p className="text-xs font-['Chakra_Petch'] font-black text-white">
                     {stats.bultosAuditados} <span className="text-[10px] text-slate-400 font-normal">de {stats.bultosEsperados} bultos</span>
                   </p>
                   <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 rounded-full transition-all duration-300"
                       style={{ width: `${stats.pctBultos}%` }}
                     />
                   </div>
                 </div>
 
-                {/* KPI Unidades */}
-                <div className="p-2.5 bg-slate-950/80 border border-cyan-500/20 rounded-xl space-y-1">
+                {/* Unidades */}
+                <div className="p-2.5 bg-[#030e1f] border border-sky-500/20 rounded-xl space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
                       <Layers className="w-3 h-3 text-emerald-400" />
@@ -588,14 +630,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   </p>
                   <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-emerald-500 to-sky-400 rounded-full transition-all duration-300"
                       style={{ width: `${stats.pctUnidades}%` }}
                     />
                   </div>
                 </div>
 
-                {/* KPI Agotados */}
-                <div className={`p-2 bg-slate-950/80 border rounded-xl flex items-center justify-between ${stats.agotadosCount > 0 ? 'border-amber-500/40 bg-amber-950/20' : 'border-cyan-500/20'}`}>
+                {/* Agotados */}
+                <div className={`p-2 bg-[#030e1f] border rounded-xl flex items-center justify-between ${stats.agotadosCount > 0 ? 'border-amber-500/40 bg-amber-950/20' : 'border-sky-500/20'}`}>
                   <span className="text-[10px] font-['Chakra_Petch'] font-bold text-amber-300 uppercase flex items-center space-x-1">
                     <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                     <span>Agotados</span>
@@ -605,10 +647,10 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   </span>
                 </div>
 
-                {/* KPI Total Ítems */}
-                <div className="p-2 bg-slate-950/80 border border-cyan-500/20 rounded-xl flex items-center justify-between">
+                {/* Total Ítems */}
+                <div className="p-2 bg-[#030e1f] border border-sky-500/20 rounded-xl flex items-center justify-between">
                   <span className="text-[10px] font-['Chakra_Petch'] font-bold text-slate-400 uppercase flex items-center space-x-1">
-                    <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                    <CheckCircle2 className="w-3 h-3 text-sky-400" />
                     <span>Total Ítems</span>
                   </span>
                   <span className="font-mono text-xs font-bold text-white">
@@ -619,36 +661,34 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               </div>
             </div>
 
-            {/* Barra de Búsqueda y Filtros */}
-            <div className="p-2.5 bg-slate-900/90 border border-cyan-500/20 rounded-2xl space-y-2">
+            {/* Buscador y Filtros de Productos */}
+            <div className="p-3 bg-[#051329]/90 border border-sky-500/30 rounded-2xl space-y-2.5">
               
-              {/* Input de Búsqueda */}
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyan-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-sky-400" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Buscar por SKU, UPC, Descripción..."
-                  className="w-full bg-slate-950 border border-cyan-500/30 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 font-mono"
+                  className="w-full bg-[#020b18] border border-sky-500/30 rounded-xl pl-9 pr-7 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 font-mono"
                 />
                 {searchTerm && (
                   <button
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 cursor-pointer"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              {/* Selector de Departamento */}
               {departamentos.length > 0 && (
                 <div>
                   <select
                     value={selectedDepto}
                     onChange={(e) => setSelectedDepto(e.target.value)}
-                    className="w-full bg-slate-950 border border-cyan-500/30 rounded-xl px-2.5 py-1.5 text-[11px] text-slate-200 focus:outline-none focus:border-cyan-400 font-mono cursor-pointer"
+                    className="w-full bg-[#020b18] border border-sky-500/30 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400 font-mono cursor-pointer"
                   >
                     <option value="TODOS">Todos los departamentos</option>
                     {departamentos.map((d, i) => (
@@ -658,14 +698,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                 </div>
               )}
 
-              {/* Chips de Filtrado Rápido */}
+              {/* Chips de Filtrado */}
               <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                 <button
                   onClick={() => setSoloAgotados(!soloAgotados)}
                   className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider flex items-center space-x-1 transition-all cursor-pointer ${
                     soloAgotados
                       ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
-                      : 'bg-slate-950 text-amber-300 hover:bg-slate-800 border border-amber-500/30'
+                      : 'bg-[#020b18] text-amber-300 hover:bg-[#0c2847] border border-amber-500/30'
                   }`}
                 >
                   <AlertTriangle className="w-3 h-3 shrink-0" />
@@ -678,8 +718,8 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                     onClick={() => setStatusFilter(st)}
                     className={`px-2 py-0.5 rounded-lg text-[10px] font-['Chakra_Petch'] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                       statusFilter === st
-                        ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                        : 'bg-slate-950 text-slate-300 hover:text-white border border-cyan-500/20'
+                        ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+                        : 'bg-[#020b18] text-slate-300 hover:text-white border border-sky-500/20'
                     }`}
                   >
                     {st === 'TODOS' && 'Todos'}
@@ -696,20 +736,20 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
             </div>
 
-            {/* Listado de Ítems en Cards Verticales Compactas */}
-            <div className="space-y-2">
+            {/* Listado de Ítems */}
+            <div className="space-y-2.5">
               {loadingItems ? (
-                <div className="p-8 text-center text-xs font-mono text-cyan-300 animate-pulse">
+                <div className="p-8 text-center text-xs font-mono text-sky-400 animate-pulse">
                   Cargando productos del camión NAE #{selectedTruck.numero_nae}...
                 </div>
               ) : filteredItems.length === 0 ? (
-                <div className="p-6 text-center bg-slate-900/80 border border-cyan-500/20 rounded-2xl space-y-1.5">
-                  <Info className="w-6 h-6 text-cyan-400 mx-auto" />
-                  <p className="font-['Chakra_Petch'] font-bold text-xs text-cyan-200 uppercase">
+                <div className="p-6 text-center bg-[#051329]/90 border border-sky-500/20 rounded-2xl space-y-1.5">
+                  <Info className="w-6 h-6 text-sky-400 mx-auto" />
+                  <p className="font-['Chakra_Petch'] font-bold text-xs text-sky-200 uppercase">
                     Sin coincidencias
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    Prueba cambiando el texto o desactivando los filtros.
+                    Prueba cambiando el término de búsqueda o quitando los filtros.
                   </p>
                 </div>
               ) : (
@@ -723,23 +763,23 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   return (
                     <div
                       key={item.id || item.upc}
-                      className={`p-3 bg-slate-900/90 border rounded-2xl transition-all space-y-2 shadow-md ${
+                      className={`p-3.5 bg-[#051329]/90 border rounded-2xl transition-all space-y-2 shadow-md ${
                         item.es_agotado_transito 
-                          ? 'border-amber-500/40 bg-gradient-to-r from-slate-900/95 via-slate-900/95 to-amber-950/20' 
-                          : 'border-cyan-500/20'
+                          ? 'border-amber-500/40 bg-gradient-to-r from-[#051329]/90 to-amber-950/20' 
+                          : 'border-sky-500/20'
                       }`}
                     >
-                      {/* Fila 1: SKU, UPC y Badge de Estado */}
+                      {/* Cabecera Ítem */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 space-y-0.5">
                           <div className="flex items-center space-x-2 text-[11px] font-mono">
-                            <span className="font-bold text-cyan-300">SKU: {item.sku}</span>
+                            <span className="font-bold text-sky-300">SKU: {item.sku}</span>
                             <span className="text-slate-400 truncate">UPC: {item.upc}</span>
                           </div>
                           <h4 className="font-bold text-xs text-white uppercase tracking-wide truncate">
                             {item.descripcion}
                           </h4>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded border border-slate-700 inline-block">
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 bg-[#020b18] text-slate-300 rounded border border-slate-700 inline-block">
                             DEPTO {item.depto_codigo || '00'} - {item.depto_nombre || 'GENERAL'}
                           </span>
                         </div>
@@ -747,7 +787,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                         {renderItemReceptionBadge(item)}
                       </div>
 
-                      {/* Fila 2: Indicador Destacado de Agotado en Tránsito */}
+                      {/* Agotado en Tránsito Destacado */}
                       {item.es_agotado_transito && (
                         <div className="p-1.5 bg-amber-950/80 border border-amber-500/40 rounded-xl flex items-center justify-between text-[11px] text-amber-200">
                           <div className="flex items-center space-x-1.5">
@@ -762,22 +802,22 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                         </div>
                       )}
 
-                      {/* Fila 3: Bultos y Unidades */}
-                      <div className="grid grid-cols-2 gap-1.5 pt-0.5 border-t border-cyan-500/10 text-xs">
-                        <div className="bg-slate-950 p-1.5 rounded-xl border border-cyan-500/15 flex items-center justify-between">
+                      {/* Bultos y Unidades */}
+                      <div className="grid grid-cols-2 gap-2 pt-0.5 border-t border-sky-500/10 text-xs">
+                        <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
                           <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
                             Bultos:
                           </span>
-                          <span className="font-mono text-[11px] font-bold text-cyan-300">
+                          <span className="font-mono text-xs font-bold text-sky-300">
                             {bAud} <span className="text-slate-500 font-normal">de {bEsp}</span>
                           </span>
                         </div>
 
-                        <div className="bg-slate-950 p-1.5 rounded-xl border border-cyan-500/15 flex items-center justify-between">
+                        <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
                           <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
                             Unidades:
                           </span>
-                          <span className="font-mono text-[11px] font-bold text-emerald-300">
+                          <span className="font-mono text-xs font-bold text-emerald-300">
                             {uAud} <span className="text-slate-500 font-normal">de {uEsp} un</span>
                           </span>
                         </div>
@@ -801,50 +841,49 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
           </div>
         ) : (
-          /* 4. VISTA DE LISTA DE CAMIONES DE PERECEDEROS (Formato Compacto) */
+          /* 4. LISTADO PRINCIPAL DE CAMIONES DE PERECEDEROS (Tarjetas Estilo AudiMAS) */
           <div className="space-y-3">
             
             {/* Buscador de Camiones */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyan-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sky-400" />
               <input
                 type="text"
                 value={truckSearch}
                 onChange={(e) => setTruckSearch(e.target.value)}
                 placeholder="Buscar por NAE o Tienda..."
-                className="w-full bg-slate-900 border border-cyan-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 font-mono shadow-sm"
+                className="w-full bg-[#051329]/90 border border-sky-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 font-mono shadow-sm"
               />
             </div>
 
-            <div className="px-1 flex items-center justify-between">
-              <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-cyan-400 uppercase tracking-widest">
+            <div className="px-1 py-0.5">
+              <h3 className="text-xs font-['Chakra_Petch'] font-extrabold text-sky-400 uppercase tracking-widest">
                 CAMIONES DE PERECEDEROS ({filteredCamiones.length})
               </h3>
-              <span className="text-[10px] font-mono text-slate-400">Frío y Congelado</span>
             </div>
 
-            {/* Listado de Tarjetas de Camiones */}
+            {/* Listado de Tarjetas de Camión */}
             {loadingCamiones ? (
-              <div className="p-8 text-center text-xs font-mono text-cyan-300 animate-pulse">
+              <div className="p-8 text-center text-xs text-sky-400/80 font-mono">
                 Consultando camiones de perecederos...
               </div>
             ) : filteredCamiones.length === 0 ? (
-              <div className="p-8 text-center bg-slate-900/90 border border-cyan-500/20 rounded-2xl space-y-2.5 shadow-xl">
-                <Truck className="w-10 h-10 text-slate-500 mx-auto" />
+              <div className="p-8 text-center bg-[#061224]/90 border border-sky-500/20 rounded-2xl space-y-3 shadow-xl">
+                <Truck className="w-12 h-12 text-slate-600 mx-auto" />
                 <div>
-                  <p className="font-['Chakra_Petch'] font-bold text-xs text-cyan-200 uppercase tracking-wider">
+                  <p className="font-['Chakra_Petch'] font-bold text-sm text-sky-200 uppercase tracking-wider">
                     No hay camiones de perecederos registrados
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Carga un archivo AP2 para precargar el primer camión de frío/congelado.
+                  <p className="text-xs text-slate-400 mt-1">
+                    Carga un archivo en formato AP2 para precargar el primer camión de frío/congelado.
                   </p>
                 </div>
                 <button
                   onClick={() => setIsUploadModalOpen(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-cyan-950 cursor-pointer"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl inline-flex items-center space-x-1.5 shadow-md shadow-blue-600/30 transition-all active:scale-95 cursor-pointer"
                 >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Precargar Camión AP2</span>
+                  <Upload className="w-4 h-4" />
+                  <span>Cargar Camión AP2</span>
                 </button>
               </div>
             ) : (
@@ -856,11 +895,11 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   <div
                     key={cam.id}
                     onClick={() => setSelectedTruck(cam)}
-                    className="p-3.5 bg-slate-900/90 border border-cyan-500/20 hover:border-cyan-400/60 rounded-2xl transition-all space-y-2.5 shadow-lg cursor-pointer hover:bg-slate-800/90 active:scale-[0.99] group"
+                    className="p-4 bg-[#051329]/90 border border-sky-500/30 hover:border-cyan-400/80 rounded-2xl transition-all space-y-3 shadow-xl cursor-pointer active:scale-[0.99] group"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <span className="font-mono font-black text-sm text-cyan-300 group-hover:text-cyan-200">
+                        <span className="font-mono font-black text-sm text-sky-400 group-hover:text-cyan-300 transition-colors">
                           NAE: {cam.numero_nae}
                         </span>
                         {isFromCamionesPlus && (
@@ -871,50 +910,30 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                       </div>
 
                       <div className="flex items-center space-x-1.5">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-['Chakra_Petch'] font-bold ${
-                          cam.estado === 'EN_CONSULTA'
-                            ? 'bg-slate-800 text-slate-300 border border-slate-700'
-                            : cam.estado === 'DISPONIBLE'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : cam.estado === 'EN_PROCESO'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                        }`}>
-                          {cam.estado === 'EN_CONSULTA' ? 'EN CONSULTA' : cam.estado}
-                        </span>
-
-                        <ChevronRight className="w-4 h-4 text-cyan-400 group-hover:translate-x-1 transition-transform" />
+                        {renderEstadoBadge(cam)}
+                        <ChevronRight className="w-4 h-4 text-sky-400 group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[9px] uppercase tracking-wider ${clasif.className}`}>
-                        {clasif.label}
+                    {/* Insignias de Clasificación de Carga */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className={`px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider flex items-center space-x-1 ${clasif.className}`}>
+                        <span>{clasif.label}</span>
                       </span>
                       {cam.tiene_reporte_ap && (
-                        <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[9px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
-                          📊 Reporte AP
+                        <span className="px-2 py-0.5 rounded-lg font-['Chakra_Petch'] font-bold text-[10px] uppercase tracking-wider bg-cyan-950 text-cyan-300 border border-cyan-400/30">
+                          📊 REPORTE AP
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
+                    <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
                       <div className="flex items-center space-x-1.5 truncate">
-                        <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <Building2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                         <span className="truncate">{formatStoreDisplay(cam.tienda_codigo, cam.tienda_nombre, cam.numero_nae).fullDisplay}</span>
                       </div>
-                      <span className="text-slate-400 text-[10px] shrink-0">
+                      <span className="text-slate-400 text-[11px] font-mono shrink-0">
                         {cam.fecha_arribo || formatDateTimeArg(cam.created_at)}
-                      </span>
-                    </div>
-
-                    <div className="pt-2 border-t border-cyan-500/10 flex items-center justify-between text-xs font-['Chakra_Petch'] text-cyan-300">
-                      <span className="flex items-center space-x-1">
-                        <Eye className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="uppercase font-bold tracking-wider text-[11px]">Ver ítems y avance</span>
-                      </span>
-                      <span className="text-slate-400 text-[10px] font-mono">
-                        Consulta sin escáner
                       </span>
                     </div>
 
@@ -926,14 +945,22 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
           </div>
         )}
 
-      </div>
+      </main>
 
-      {/* 5. Modal de Precarga de Archivo AP2 (Compacto) */}
+      {/* 5. Cápsula de Navegación Inferior Flotante (BottomNavCapsule con Home / Casita) */}
+      <BottomNavCapsule
+        onBack={selectedTruck ? () => setSelectedTruck(null) : onBack}
+        onHome={onHome || onBack}
+        showScan={false}
+        showHome={true}
+      />
+
+      {/* 6. Modal de Precarga de Archivo AP2 */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 animate-fade-in">
-          <div className="bg-slate-900 border border-cyan-500/40 rounded-3xl max-w-sm sm:max-w-md w-full p-4 space-y-3.5 shadow-2xl shadow-cyan-950">
+          <div className="bg-[#051329] border border-sky-500/40 rounded-3xl max-w-sm sm:max-w-md w-full p-4 space-y-3.5 shadow-2xl shadow-blue-950">
             
-            <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2.5">
+            <div className="flex items-center justify-between border-b border-sky-500/20 pb-2.5">
               <div className="flex items-center space-x-2">
                 <div className="p-1.5 bg-cyan-500/20 rounded-xl border border-cyan-400/30">
                   <Snowflake className="w-4 h-4 text-cyan-300" />
@@ -942,7 +969,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   <h3 className="font-['Chakra_Petch'] font-black text-xs text-white uppercase tracking-wider">
                     Precarga Camión Perecederos
                   </h3>
-                  <p className="text-[10px] text-cyan-300/80 font-mono">
+                  <p className="text-[10px] text-sky-300/80 font-mono">
                     FORMATO AP v2 (.XLSX / .XLS)
                   </p>
                 </div>
@@ -966,7 +993,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
             <div className="space-y-2.5">
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-cyan-500/40 hover:border-cyan-400/80 rounded-2xl p-5 text-center space-y-2 cursor-pointer bg-slate-950/80 hover:bg-slate-950 transition-all group"
+                className="border-2 border-dashed border-sky-500/40 hover:border-cyan-400/80 rounded-2xl p-5 text-center space-y-2 cursor-pointer bg-[#020b18] hover:bg-[#061838] transition-all group"
               >
                 <input
                   type="file"
@@ -977,7 +1004,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   disabled={isUploading || isParsing}
                 />
 
-                <FileSpreadsheet className="w-8 h-8 text-cyan-400 mx-auto group-hover:scale-110 transition-transform" />
+                <FileSpreadsheet className="w-8 h-8 text-sky-400 mx-auto group-hover:scale-110 transition-transform" />
                 <div>
                   <p className="font-['Chakra_Petch'] font-bold text-xs text-white uppercase tracking-wider truncate">
                     {selectedFile ? selectedFile.name : 'Toca para seleccionar archivo AP v2'}
@@ -995,9 +1022,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               )}
 
               {previewData && (
-                <div className="p-3 bg-slate-950 border border-cyan-500/30 rounded-2xl space-y-2 animate-fade-in text-xs">
-                  <div className="flex items-center justify-between border-b border-cyan-500/15 pb-1.5">
-                    <span className="font-['Chakra_Petch'] font-black text-xs text-cyan-300">
+                <div className="p-3 bg-[#020b18] border border-sky-500/30 rounded-2xl space-y-2 animate-fade-in text-xs">
+                  <div className="flex items-center justify-between border-b border-sky-500/15 pb-1.5">
+                    <span className="font-['Chakra_Petch'] font-black text-xs text-sky-300">
                       NAE #{previewData.numero_nae}
                     </span>
                     <span className="text-[11px] font-mono text-slate-300">
@@ -1006,19 +1033,19 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5 text-center">
-                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                    <div className="p-1.5 bg-[#051329] rounded-xl">
                       <span className="text-[9px] text-slate-400 block">SKUs</span>
                       <span className="font-bold text-white font-mono">{previewData.totalSKUs}</span>
                     </div>
-                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                    <div className="p-1.5 bg-[#051329] rounded-xl">
                       <span className="text-[9px] text-slate-400 block">Bultos</span>
                       <span className="font-bold text-cyan-300 font-mono">{previewData.totalBultos}</span>
                     </div>
-                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                    <div className="p-1.5 bg-[#051329] rounded-xl">
                       <span className="text-[9px] text-slate-400 block">Unidades</span>
                       <span className="font-bold text-emerald-300 font-mono">{previewData.totalUnidades}</span>
                     </div>
-                    <div className="p-1.5 bg-slate-900 rounded-xl">
+                    <div className="p-1.5 bg-[#051329] rounded-xl">
                       <span className="text-[9px] text-amber-300 block">Agotados</span>
                       <span className="font-bold text-amber-400 font-mono">{previewData.agotadosTransitoCount}</span>
                     </div>
@@ -1051,14 +1078,14 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               )}
 
               {isUploading && (
-                <div className="space-y-1 p-2.5 bg-slate-950 border border-cyan-500/30 rounded-xl">
+                <div className="space-y-1 p-2.5 bg-[#020b18] border border-sky-500/30 rounded-xl">
                   <div className="flex justify-between text-[11px] font-mono text-cyan-300">
                     <span>{uploadProgressText || 'Guardando camión...'}</span>
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
@@ -1067,7 +1094,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-cyan-500/20">
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-sky-500/20">
               <button
                 onClick={() => {
                   setIsUploadModalOpen(false);
@@ -1084,7 +1111,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               <button
                 onClick={handleConfirmUpload}
                 disabled={!previewData || isUploading || isParsing}
-                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-50 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-cyan-950 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-blue-950 flex items-center space-x-1.5 cursor-pointer transition-all active:scale-95"
               >
                 {isUploading ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />

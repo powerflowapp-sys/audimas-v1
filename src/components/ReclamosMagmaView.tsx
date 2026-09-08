@@ -57,37 +57,58 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
   const [selectedForGestion, setSelectedForGestion] = useState<ReclamoMagma | null>(null);
   const [selectedForDetalle, setSelectedForDetalle] = useState<ReclamoMagma | null>(null);
 
-  const loadReclamos = async () => {
-    setLoading(true);
+  // Control de carga concurrente y silent refresh
+  const isFetchingRef = React.useRef<boolean>(false);
+  const camionesRef = React.useRef<CamionNAE[]>(camiones);
+  camionesRef.current = camiones;
+
+  const loadReclamos = React.useCallback(async (silent: boolean = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (!silent) setLoading(true);
     try {
-      const data = await fetchReclamosMagma(camiones);
+      const data = await fetchReclamosMagma(camionesRef.current);
       setReclamos(data);
     } catch (err) {
       console.warn('Error al cargar reclamos:', err);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  };
+  }, []);
 
+  // Carga inicial y ante cambios reales en la lista de camiones
+  const prevCamionesSignature = React.useRef<string>('');
   useEffect(() => {
-    loadReclamos();
+    const signature = (camiones || []).map(c => `${c.id}_${c.estado}`).join('|');
+    if (prevCamionesSignature.current !== signature) {
+      prevCamionesSignature.current = signature;
+      loadReclamos(reclamos.length > 0);
+    }
+  }, [camiones, loadReclamos, reclamos.length]);
 
-    // Suscripción en tiempo real a la tabla reclamos_magma en Supabase
+  // Suscripción Realtime aislada a la tabla reclamos_magma con debounce
+  useEffect(() => {
+    let debounceTimer: any = null;
     const channel = supabase
       .channel('realtime_reclamos_magma_changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'reclamos_magma' },
         () => {
-          loadReclamos();
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            loadReclamos(true); // Actualización silenciosa en background sin spinner bloqueante
+          }, 1200);
         }
       )
       .subscribe();
 
     return () => {
+      clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [camiones]);
+  }, [loadReclamos]);
 
 
   if (isMobileScreen && !forzarVistaMobile) {
@@ -154,7 +175,7 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
         .eq('nae_id', r.nae_id);
 
       await exportarPlanillaReclamoMagmaExcel(r, items || [], undefined, targetCamion);
-      loadReclamos();
+      loadReclamos(true);
     } catch (err) {
       console.warn('Error al exportar rápida:', err);
     }
@@ -188,7 +209,7 @@ export const ReclamosMagmaView: React.FC<Props> = ({ camiones, onRefreshCamiones
         </div>
 
         <button
-          onClick={loadReclamos}
+          onClick={() => loadReclamos(false)}
           className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all self-start md:self-auto cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

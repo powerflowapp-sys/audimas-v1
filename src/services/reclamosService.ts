@@ -227,175 +227,122 @@ export const calcularDiscrepanciasReclamo = (
  * Sincroniza y persiste automáticamente los desvíos de camiones cerrados.
  */
 export const fetchReclamosMagma = async (camiones: CamionNAE[]): Promise<ReclamoMagma[]> => {
-  // Cruce preventivo con auditoria_logs para detectar si el último cierre fue PARCIAL
-  const camionesEnriquecidos = await enriquecerCamionesConLogsParciales(camiones);
-
-  // 1. Consultar la tabla reclamos_magma en Supabase
-  let dbReclamos: ReclamoMagma[] = [];
   try {
-    const { data, error } = await supabase
-      .from('reclamos_magma')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Cruce preventivo con auditoria_logs para detectar si el último cierre fue PARCIAL
+    const camionesEnriquecidos = await enriquecerCamionesConLogsParciales(camiones);
 
-    if (!error && data) {
-      dbReclamos = data as ReclamoMagma[];
-    }
-  } catch (err) {
-    console.warn('⚠️ Error al consultar la tabla reclamos_magma en Supabase:', err);
-  }
-
-  // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
-  const camionesCerrados = camionesEnriquecidos.filter(c => {
-    const est = (c.estado || '').trim().toUpperCase();
-    return est.includes('CERRADO') || est.includes('FINALIZADO') || isCamionCierreParcial(c);
-  });
-
-  const resultReclamos: ReclamoMagma[] = [];
-
-  for (const camion of camionesCerrados) {
-    const esParcial = isCamionCierreParcial(camion);
-
-    // Buscar reclamo existente en la base de datos de Supabase por id, rec_${camion.id}, nae_id O por nae_numero
-    let reclamo = dbReclamos.find(r => 
-      (r.id && (r.id === `rec_${camion.id}` || r.id === camion.id)) ||
-      (r.nae_id && r.nae_id === camion.id) || 
-      (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
-    );
-
-    // Si se encontró el reclamo pero le faltaban datos de vinculación en DB, normalizarlos
-    if (reclamo) {
-      if (!reclamo.nae_id) reclamo.nae_id = camion.id;
-      if (!reclamo.nae_numero && camion.numero_nae) reclamo.nae_numero = camion.numero_nae.trim();
-      if (!reclamo.tienda_codigo && camion.tienda_codigo) reclamo.tienda_codigo = camion.tienda_codigo;
-      if (!reclamo.tienda_nombre && camion.tienda_nombre) reclamo.tienda_nombre = camion.tienda_nombre;
-      if (!reclamo.ticket_magma && (reclamo as any).nro_ticket) reclamo.ticket_magma = (reclamo as any).nro_ticket;
-    }
-
+    // 1. Consultar la tabla reclamos_magma en Supabase
+    let dbReclamos: ReclamoMagma[] = [];
     try {
-      const { data: items } = await supabase
-        .from('auditoria_items')
+      const { data, error } = await supabase
+        .from('reclamos_magma')
         .select('*')
-        .eq('nae_id', camion.id);
+        .order('created_at', { ascending: false });
 
-      let itemsList = items || [];
-      itemsList = await rescatarCostosDesdeMaestroV8(itemsList);
-      const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
-
-      // Si el camión es 100% conforme y NO tiene selección manual previa, OMITIR reclamo Magma y purgar de Supabase
-      if (discEval.es100Conforme && !reclamo?.seleccion_manual) {
-        if (reclamo) {
-          try {
-            await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
-            await supabase.from('reclamos_magma').delete().eq('nae_id', camion.id);
-            if (camion.numero_nae) {
-              await supabase.from('reclamos_magma').delete().eq('nae_numero', camion.numero_nae.trim());
-            }
-          } catch (e) {}
-        }
-        continue;
+      if (!error && data) {
+        dbReclamos = data as ReclamoMagma[];
       }
+    } catch (err) {
+      console.warn('⚠️ Error al consultar la tabla reclamos_magma en Supabase:', err);
+    }
 
-      const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
+    // 2. Identificar camiones CERRADOS, FINALIZADOS, CERRADO_PARCIAL o FINALIZADO_PARCIAL
+    const camionesCerrados = camionesEnriquecidos.filter(c => {
+      const est = (c.estado || '').trim().toUpperCase();
+      return est.includes('CERRADO') || est.includes('FINALIZADO') || isCamionCierreParcial(c);
+    });
 
-      // Si de lo auditado no resultan discrepancias y NO fue personalizado manualmente, asegurar borrado
-      if (disc.cantSkusAfectados === 0 && disc.totalMontoReclamado === 0 && !reclamo?.seleccion_manual) {
-        if (reclamo) {
-          try {
-            await supabase.from('reclamos_magma').delete().eq('id', reclamo.id);
-            await supabase.from('reclamos_magma').delete().eq('nae_id', camion.id);
-          } catch (e) {}
-        }
-        continue;
-      }
+    const resultReclamos: ReclamoMagma[] = [];
 
-      const fechaCierre = camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
+    for (const camion of camionesCerrados) {
+      const esParcial = isCamionCierreParcial(camion);
 
+      // Buscar reclamo existente en la base de datos de Supabase por id, rec_${camion.id}, nae_id O por nae_numero
+      let reclamo = dbReclamos.find(r => 
+        (r.id && (r.id === `rec_${camion.id}` || r.id === camion.id)) ||
+        (r.nae_id && r.nae_id === camion.id) || 
+        (r.nae_numero && camion.numero_nae && r.nae_numero.trim() === camion.numero_nae.trim())
+      );
+
+      // CASO A: EL RECLAMO YA EXISTE EN SUPABASE -> USARLO DIRECTAMENTE SIN VOLVER A ESCRIBIR EN LA DB
       if (reclamo) {
-        // SI TIENE SELECCIÓN MANUAL GUARDADA POR EL USUARIO (incluso con $0.00 o 0 SKUs): Preservar montos y selección exactos
-        if (Boolean(reclamo.seleccion_manual)) {
-          reclamo = {
-            ...reclamo,
-            nae_id: reclamo.nae_id || camion.id,
-            nae_numero: reclamo.nae_numero || camion.numero_nae,
-            tienda_codigo: reclamo.tienda_codigo || camion.tienda_codigo,
-            tienda_nombre: reclamo.tienda_nombre || camion.tienda_nombre,
-            monto_total_reclamado: Number(reclamo.monto_total_reclamado ?? 0),
-            cant_skus_afectados: Number(reclamo.cant_skus_afectados ?? 0),
-            cant_unidades_afectadas: Number(reclamo.cant_unidades_afectadas ?? 0),
-            items_seleccionados: Array.isArray(reclamo.items_seleccionados) ? reclamo.items_seleccionados : [],
-            seleccion_manual: true,
-            fecha_cierre_auditoria: fechaCierre,
-            monto_discrepancias_total: disc.totalMontoReclamado, // Referencia teórica de auditoría
-            updated_at: reclamo.updated_at || new Date().toISOString()
-          };
-        } else {
-          // Si no es manual, recalcular automáticamente con los datos de la auditoría
-          reclamo = {
-            ...reclamo,
-            nae_id: reclamo.nae_id || camion.id,
-            nae_numero: reclamo.nae_numero || camion.numero_nae,
-            tienda_codigo: reclamo.tienda_codigo || camion.tienda_codigo,
-            tienda_nombre: reclamo.tienda_nombre || camion.tienda_nombre,
-            fecha_cierre_auditoria: fechaCierre,
+        const fechaCierre = reclamo.fecha_cierre_auditoria || camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
+
+        resultReclamos.push({
+          ...reclamo,
+          nae_id: reclamo.nae_id || camion.id,
+          nae_numero: reclamo.nae_numero || camion.numero_nae || '',
+          tienda_codigo: reclamo.tienda_codigo || camion.tienda_codigo || '',
+          tienda_nombre: reclamo.tienda_nombre || camion.tienda_nombre || '',
+          monto_total_reclamado: Number(reclamo.monto_total_reclamado ?? 0),
+          cant_skus_afectados: Number(reclamo.cant_skus_afectados ?? 0),
+          cant_unidades_afectadas: Number(reclamo.cant_unidades_afectadas ?? 0),
+          items_seleccionados: Array.isArray(reclamo.items_seleccionados) ? reclamo.items_seleccionados : [],
+          seleccion_manual: Boolean(reclamo.seleccion_manual),
+          fecha_cierre_auditoria: fechaCierre,
+          ticket_magma: reclamo.ticket_magma || (reclamo as any).nro_ticket || ''
+        });
+        continue;
+      }
+
+      // CASO B: EL CAMIÓN NO TIENE REGISTRO EN RECLAMOS_MAGMA -> CALCULAR INICIAL
+      try {
+        const { data: items } = await supabase
+          .from('auditoria_items')
+          .select('*')
+          .eq('nae_id', camion.id);
+
+        let itemsList = items || [];
+        const discEval = evaluarDiscrepanciasCamion(itemsList, esParcial);
+        if (discEval.es100Conforme) continue;
+
+        itemsList = await rescatarCostosDesdeMaestroV8(itemsList);
+        const disc = calcularDiscrepanciasReclamo(itemsList, camion, esParcial);
+
+        if (disc.cantSkusAfectados > 0 || disc.totalMontoReclamado > 0) {
+          const fechaCierre = camion.fecha_fin_reapertura || camion.fecha_fin_auditoria || camion.fecha_fin || camion.created_at || new Date().toISOString();
+          const newReclamo: ReclamoMagma = {
+            id: `rec_${camion.id}`,
+            nae_id: camion.id,
+            nae_numero: camion.numero_nae,
+            tienda_codigo: camion.tienda_codigo || '',
+            tienda_nombre: camion.tienda_nombre || '',
+            estado: 'PENDIENTE',
             monto_total_reclamado: disc.totalMontoReclamado,
             monto_discrepancias_total: disc.totalMontoReclamado,
             cant_skus_afectados: disc.cantSkusAfectados,
             cant_unidades_afectadas: disc.cantUnidadesAfectadas,
             items_seleccionados: disc.itemsDiscrepantes.map(d => d.itemKey),
             seleccion_manual: false,
+            fecha_cierre_auditoria: fechaCierre,
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
+
+          try {
+            const payloadNew: any = { ...newReclamo };
+            if (newReclamo.ticket_magma) payloadNew.nro_ticket = newReclamo.ticket_magma;
+            await supabase.from('reclamos_magma').upsert([payloadNew], { onConflict: 'id' });
+          } catch (e) {
+            console.warn('⚠️ Error guardando nuevo reclamo inicial en Supabase:', e);
+          }
+
+          resultReclamos.push(newReclamo);
         }
-        try {
-          const payloadSync: any = { ...reclamo };
-          if (reclamo.ticket_magma) payloadSync.nro_ticket = reclamo.ticket_magma;
-          await supabase.from('reclamos_magma').upsert([payloadSync], { onConflict: 'id' });
-        } catch (e) {}
-        resultReclamos.push(reclamo);
-        continue;
+      } catch (err) {
+        console.warn(`Error al verificar items para reclamo del camión NAE ${camion.numero_nae}:`, err);
       }
-
-      // Si no existía reclamo registrado y tiene desvíos, crear el registro inicial en Supabase
-      if (disc.cantSkusAfectados > 0 || disc.totalMontoReclamado > 0) {
-        const newReclamo: ReclamoMagma = {
-          id: `rec_${camion.id}`,
-          nae_id: camion.id,
-          nae_numero: camion.numero_nae,
-          tienda_codigo: camion.tienda_codigo,
-          tienda_nombre: camion.tienda_nombre,
-          estado: 'PENDIENTE',
-          monto_total_reclamado: disc.totalMontoReclamado,
-          monto_discrepancias_total: disc.totalMontoReclamado,
-          cant_skus_afectados: disc.cantSkusAfectados,
-          cant_unidades_afectadas: disc.cantUnidadesAfectadas,
-          items_seleccionados: disc.itemsDiscrepantes.map(d => d.itemKey),
-          seleccion_manual: false,
-          fecha_cierre_auditoria: fechaCierre,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-
-        try {
-          const payloadNew: any = { ...newReclamo };
-          if (newReclamo.ticket_magma) payloadNew.nro_ticket = newReclamo.ticket_magma;
-          await supabase.from('reclamos_magma').upsert([payloadNew], { onConflict: 'id' });
-        } catch (e) {
-          console.warn('⚠️ Error guardando nuevo reclamo inicial en Supabase:', e);
-        }
-
-        resultReclamos.push(newReclamo);
-      }
-    } catch (err) {
-      console.warn(`Error al verificar items para reclamo del camión NAE ${camion.numero_nae}:`, err);
     }
-  }
 
-  return resultReclamos.sort((a, b) => {
-    const dateA = a.fecha_cierre_auditoria ? new Date(a.fecha_cierre_auditoria).getTime() : 0;
-    const dateB = b.fecha_cierre_auditoria ? new Date(b.fecha_cierre_auditoria).getTime() : 0;
-    return dateB - dateA;
-  });
+    return resultReclamos.sort((a, b) => {
+      const dateA = a.fecha_cierre_auditoria ? new Date(a.fecha_cierre_auditoria).getTime() : 0;
+      const dateB = b.fecha_cierre_auditoria ? new Date(b.fecha_cierre_auditoria).getTime() : 0;
+      return dateB - dateA;
+    });
+  } catch (globalErr) {
+    console.warn('⚠️ Error global inesperado en fetchReclamosMagma:', globalErr);
+    return [];
+  }
 };
 
 /**

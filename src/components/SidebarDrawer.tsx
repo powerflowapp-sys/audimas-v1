@@ -30,6 +30,7 @@ interface SidebarDrawerProps {
   onGoDashboard: () => void;
   onOpenDashboardGerencial?: () => void;
   onOpenCamionesPlus?: () => void;
+  onOpenCargarCamionPerecedero?: () => void;
   onOpenCargarCamion: () => void;
   onOpenCatalogoMaestro: () => void;
   onOpenHistorialReportes?: () => void;
@@ -52,6 +53,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onGoDashboard,
   onOpenDashboardGerencial,
   onOpenCamionesPlus,
+  onOpenCargarCamionPerecedero,
   onOpenCargarCamion,
   onOpenCatalogoMaestro,
   onOpenHistorialReportes,
@@ -193,28 +195,6 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 <span>Camiones</span>
               </button>
 
-              {/* [ ❄️ Camiones+ ] */}
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  if (onOpenCamionesPlus) onOpenCamionesPlus();
-                }}
-                className={`w-full text-xs font-semibold px-3 py-2 transition-all text-left cursor-pointer flex items-center space-x-3 rounded-xl ${
-                  isCamionesPlusActive
-                    ? 'bg-[#042852] text-white font-bold border-l-4 border-cyan-400 shadow-md'
-                    : 'text-slate-300 hover:text-white hover:bg-cyan-500/10'
-                }`}
-              >
-                <Snowflake className="w-4 h-4 text-cyan-400 shrink-0" />
-                <div className="flex items-center justify-between flex-1">
-                  <span>Camiones+</span>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
-                    PERECEDEROS
-                  </span>
-                </div>
-              </button>
-
               {/* [ 📊 Dashboard Gerencial ] */}
               <button
                 type="button"
@@ -308,7 +288,48 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               </button>
             </nav>
 
-            {/* 4. OPCIONES DE SISTEMA */}
+            {/* 4. Módulo CAMIONESMÁS */}
+            <nav className="px-3 pt-1 space-y-1">
+              <div className="font-['Chakra_Petch'] font-black text-xs text-sky-300 uppercase tracking-wider border-b border-sky-500/20 pb-1 px-2 mb-1.5 flex items-center justify-between">
+                <span>CAMIONESMÁS</span>
+              </div>
+
+              {/* [ ❄️ Consultar Camiones Perecederos ] */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenCamionesPlus) onOpenCamionesPlus();
+                }}
+                className={`w-full text-xs font-semibold px-3 py-2 transition-all text-left cursor-pointer flex items-center space-x-3 rounded-xl ${
+                  isCamionesPlusActive
+                    ? 'bg-[#042852] text-white font-bold border-l-4 border-cyan-400 shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-cyan-500/10'
+                }`}
+              >
+                <Snowflake className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Consultar Camiones Perecederos</span>
+              </button>
+
+              {/* [ 📥 Cargar Camión Perecedero (Subida AP2) ] */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenCargarCamionPerecedero) {
+                    onOpenCargarCamionPerecedero();
+                  } else if (onOpenCamionesPlus) {
+                    onOpenCamionesPlus();
+                  }
+                }}
+                className="w-full text-xs font-semibold px-3 py-2 transition-all text-left cursor-pointer flex items-center space-x-3 rounded-xl text-slate-300 hover:text-white hover:bg-cyan-500/10"
+              >
+                <Truck className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Cargar Camión Perecedero</span>
+              </button>
+            </nav>
+
+            {/* 5. OPCIONES DE SISTEMA */}
             <nav className="px-3 pt-1 space-y-1">
               <div className="font-['Chakra_Petch'] font-black text-xs text-sky-300 uppercase tracking-wider border-b border-sky-500/20 pb-1 px-2 mb-1.5 flex items-center justify-between">
                 <span>OPCIONES DE SISTEMA</span>

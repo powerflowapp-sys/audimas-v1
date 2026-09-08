@@ -108,6 +108,7 @@ export const App: React.FC = () => {
   
   const [activeNaeId, setActiveNaeId] = useState<string | null>(() => getInitialViewState().naeId);
   const [currentView, setCurrentView] = useState<ViewMode>(() => getInitialViewState().view);
+  const [openCamionesPlusUpload, setOpenCamionesPlusUpload] = useState<boolean>(false);
   
   // Estado inicial de camiones recuperado al instante desde caché local
   const [camiones, setCamiones] = useState<CamionNAE[]>(() => {
@@ -1083,6 +1084,8 @@ export const App: React.FC = () => {
             onHome={() => navigateTo('HUB')}
             collaboratorName={collaborator}
             initialNaeId={activeNaeId}
+            initialOpenUploadModal={openCamionesPlusUpload}
+            onResetOpenUploadModal={() => setOpenCamionesPlusUpload(false)}
           />
         );
 
@@ -1270,6 +1273,12 @@ export const App: React.FC = () => {
           setIsDrawerOpen(false);
         }}
         onOpenCamionesPlus={() => {
+          setOpenCamionesPlusUpload(false);
+          navigateTo('CAMIONES_PLUS');
+          setIsDrawerOpen(false);
+        }}
+        onOpenCargarCamionPerecedero={() => {
+          setOpenCamionesPlusUpload(true);
           navigateTo('CAMIONES_PLUS');
           setIsDrawerOpen(false);
         }}

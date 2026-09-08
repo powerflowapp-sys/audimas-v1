@@ -33,13 +33,17 @@ interface CamionesPlusViewProps {
   onHome?: () => void;
   collaboratorName?: string;
   initialNaeId?: string | null;
+  initialOpenUploadModal?: boolean;
+  onResetOpenUploadModal?: () => void;
 }
 
 export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   onBack,
   onHome,
   collaboratorName = 'OPERADOR 1',
-  initialNaeId = null
+  initialNaeId = null,
+  initialOpenUploadModal = false,
+  onResetOpenUploadModal
 }) => {
   // Lista de camiones de perecederos
   const [camiones, setCamiones] = useState<CamionNAE[]>([]);
@@ -116,7 +120,16 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
   };
 
   // Modal de Carga AP2
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(initialOpenUploadModal);
+
+  useEffect(() => {
+    if (initialOpenUploadModal) {
+      setIsUploadModalOpen(true);
+      if (onResetOpenUploadModal) {
+        onResetOpenUploadModal();
+      }
+    }
+  }, [initialOpenUploadModal, onResetOpenUploadModal]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<CamionManifiestoPreview | null>(null);
   const [isParsing, setIsParsing] = useState<boolean>(false);
@@ -418,27 +431,17 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
 
   // Departamentos estructurados para el carrusel de tabs
   const departamentosTabs = useMemo(() => {
-    let totalAuditados = 0;
     let totalAgotados = 0;
 
     const deptMap: Record<string, {
       code: string;
       name: string;
-      auditados: number;
       total: number;
       agotados: number;
     }> = {};
 
     items.forEach(it => {
-      const bEsp = Number(it.bultos_esperados || 0);
-      const bAud = Number(it.bultos_escaneados || 0);
-      const uEsp = Number(it.unidades_esperadas || 0);
-      const uAud = Number(it.unidades_escaneadas || 0);
-
-      const isAuditado = (bEsp > 0 && bAud >= bEsp) || (uEsp > 0 && uAud >= uEsp) || bAud > 0 || uAud > 0;
       const isAgotado = Boolean(it.es_agotado_transito);
-
-      if (isAuditado) totalAuditados++;
       if (isAgotado) totalAgotados++;
 
       const rawCode = (it.depto_codigo || '').trim();
@@ -449,22 +452,19 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
         deptMap[code] = {
           code: rawCode,
           name,
-          auditados: 0,
           total: 0,
           agotados: 0
         };
       }
 
       deptMap[code].total++;
-      if (isAuditado) deptMap[code].auditados++;
       if (isAgotado) deptMap[code].agotados++;
     });
 
     const tabs = [
       {
         key: 'TODOS',
-        label: 'Todos',
-        auditadosCount: totalAuditados,
+        label: 'TODOS',
         totalCount: items.length,
         agotadosCount: totalAgotados
       }
@@ -480,8 +480,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     sortedDeptos.forEach(d => {
       tabs.push({
         key: d.code || d.name || 'GEN',
-        label: d.code ? `Dpto ${d.code}` : (d.name ? `Dpto ${d.name}` : 'Dpto Gen'),
-        auditadosCount: d.auditados,
+        label: d.code ? `DPTO ${d.code}` : (d.name ? `DPTO ${d.name.toUpperCase()}` : 'DPTO GEN'),
         totalCount: d.total,
         agotadosCount: d.agotados
       });
@@ -580,37 +579,6 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
     );
   };
 
-  // Helper de Insignia de Recepción por Ítem
-  const renderItemReceptionBadge = (item: AuditoriaItem) => {
-    const bEsp = Number(item.bultos_esperados || 0);
-    const bAud = Number(item.bultos_escaneados || 0);
-    const uEsp = Number(item.unidades_esperadas || 0);
-    const uAud = Number(item.unidades_escaneadas || 0);
-
-    const isComplete = (bEsp > 0 && bAud >= bEsp) || (uEsp > 0 && uAud >= uEsp);
-    const isProgress = (bAud > 0 && bAud < bEsp) || (uAud > 0 && uAud < uEsp);
-
-    if (isComplete) {
-      return (
-        <span className="px-2 py-0.5 rounded-md text-[10px] font-['Chakra_Petch'] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-          🟢 Completo
-        </span>
-      );
-    }
-    if (isProgress) {
-      return (
-        <span className="px-2 py-0.5 rounded-md text-[10px] font-['Chakra_Petch'] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-          🟡 En Recepción
-        </span>
-      );
-    }
-    return (
-      <span className="px-2 py-0.5 rounded-md text-[10px] font-['Chakra_Petch'] font-bold bg-[#030e1f] text-slate-400 border border-slate-700 shrink-0">
-        ⚪ Pendiente
-      </span>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col font-sans pb-32 select-none">
       
@@ -633,10 +601,9 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
             <Snowflake className="w-5 h-5 text-white animate-spin-slow" />
           </div>
           <div>
-            <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-0.5">
-              <span className="font-bold text-base text-cyan-400">CAMIONES</span>
-              <span className="font-black text-lg text-white">+</span>
-              <span className="text-xs text-sky-300 font-bold ml-1">V1</span>
+            <h1 className="font-['Chakra_Petch'] uppercase tracking-wider leading-tight flex items-baseline space-x-1">
+              <span className="font-black text-base text-cyan-400">CAMIONESMÁS</span>
+              <span className="text-xs text-sky-300 font-bold">V1</span>
             </h1>
             <p className="text-[10px] text-sky-300/80 font-mono tracking-widest uppercase">
               GESTIÓN DE PERECEDEROS (FRÍO Y AP2)
@@ -738,10 +705,10 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                           {tab.label}
                         </span>
 
-                        {/* Fila inferior (en paralelo): Avance y Agotados */}
+                        {/* Fila inferior: Cantidad total de SKUs y píldora roja si hay agotados */}
                         <div className="flex items-center space-x-1.5">
                           <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-[#020b18] text-sky-300 border border-sky-500/20">
-                            {tab.auditadosCount}/{tab.totalCount}
+                            {tab.totalCount} SKUs
                           </span>
                           {tab.agotadosCount > 0 && (
                             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-red-950/90 text-red-300 border border-red-500/50 flex items-center space-x-1 font-bold shadow-sm">
@@ -821,23 +788,20 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
               ) : (
                 filteredItems.map((item) => {
                   const bEsp = Number(item.bultos_esperados || 0);
-                  const bAud = Number(item.bultos_escaneados || 0);
                   const uEsp = Number(item.unidades_esperadas || 0);
-                  const uAud = Number(item.unidades_escaneadas || 0);
-                  const pct = bEsp > 0 ? Math.min(100, Math.round((bAud / bEsp) * 100)) : (uEsp > 0 ? Math.min(100, Math.round((uAud / uEsp) * 100)) : 0);
 
                   return (
                     <div
                       key={item.id || item.upc}
-                      className={`p-3.5 bg-[#051329]/90 border rounded-2xl transition-all space-y-2 shadow-md ${
+                      className={`p-3.5 bg-[#051329]/90 border rounded-2xl transition-all space-y-2.5 shadow-md ${
                         item.es_agotado_transito 
-                          ? 'border-amber-500/40 bg-gradient-to-r from-[#051329]/90 to-amber-950/20' 
+                          ? 'border-red-500/50 bg-gradient-to-r from-[#051329]/95 to-red-950/25 shadow-red-950/20' 
                           : 'border-sky-500/20'
                       }`}
                     >
                       {/* Cabecera Ítem */}
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 space-y-0.5">
+                        <div className="min-w-0 space-y-0.5 flex-1">
                           <div className="flex items-center space-x-2 text-[11px] font-mono">
                             <span className="font-bold text-sky-300">SKU: {item.sku}</span>
                             <span className="text-slate-400 truncate">UPC: {item.upc}</span>
@@ -849,54 +813,44 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                             DEPTO {item.depto_codigo || '00'} - {item.depto_nombre || 'GENERAL'}
                           </span>
                         </div>
-
-                        {renderItemReceptionBadge(item)}
                       </div>
 
                       {/* Agotado en Tránsito Destacado */}
                       {item.es_agotado_transito && (
-                        <div className="p-1.5 bg-amber-950/80 border border-amber-500/40 rounded-xl flex items-center justify-between text-[11px] text-amber-200">
-                          <div className="flex items-center space-x-1.5">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
-                            <span className="font-['Chakra_Petch'] font-bold uppercase tracking-wider text-amber-300">
-                              AGOTADO EN TRÁNSITO
+                        <div className="p-2 bg-red-950/90 border border-red-500/60 rounded-xl flex items-center justify-between text-xs text-red-200 shadow-sm">
+                          <div className="flex items-center space-x-2">
+                            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 animate-pulse" />
+                            <span className="font-['Chakra_Petch'] font-black uppercase tracking-wider text-red-300">
+                              ⚠️ AGOTADO EN TRÁNSITO
                             </span>
                           </div>
-                          <span className="font-mono text-[10px] text-amber-200/90 font-semibold">
-                            Stock tienda: {item.stock_disponible} un
-                          </span>
+                          {item.stock_disponible !== undefined && (
+                            <span className="font-mono text-[11px] text-red-200/90 font-bold bg-red-900/40 px-2 py-0.5 rounded border border-red-500/30">
+                              Stock: {item.stock_disponible} un
+                            </span>
+                          )}
                         </div>
                       )}
 
-                      {/* Bultos y Unidades */}
-                      <div className="grid grid-cols-2 gap-2 pt-0.5 border-t border-sky-500/10 text-xs">
+                      {/* Bultos y Unidades Previstas (Exclusivamente Logístico) */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-sky-500/15 text-xs">
                         <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
-                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
-                            Bultos:
+                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase font-bold">
+                            Bultos Previstos:
                           </span>
-                          <span className="font-mono text-xs font-bold text-sky-300">
-                            {bAud} <span className="text-slate-500 font-normal">de {bEsp}</span>
+                          <span className="font-mono text-xs font-black text-sky-300">
+                            {bEsp} <span className="text-[10px] text-slate-400 font-normal">bultos</span>
                           </span>
                         </div>
 
                         <div className="bg-[#020b18] p-2 rounded-xl border border-sky-500/15 flex items-center justify-between">
-                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase">
-                            Unidades:
+                          <span className="text-[10px] font-['Chakra_Petch'] text-slate-400 uppercase font-bold">
+                            Unidades Previstas:
                           </span>
-                          <span className="font-mono text-xs font-bold text-emerald-300">
-                            {uAud} <span className="text-slate-500 font-normal">de {uEsp} un</span>
+                          <span className="font-mono text-xs font-black text-cyan-300">
+                            {uEsp} <span className="text-[10px] text-slate-400 font-normal">un</span>
                           </span>
                         </div>
-                      </div>
-
-                      {/* Mini Barra de Progreso */}
-                      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            pct >= 100 ? 'bg-emerald-400' : pct > 0 ? 'bg-amber-400' : 'bg-transparent'
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
                       </div>
 
                     </div>
@@ -985,7 +939,7 @@ export const CamionesPlusView: React.FC<CamionesPlusViewProps> = ({
                         ) : (
                           <span className="px-2.5 py-0.5 text-[10px] font-['Chakra_Petch'] font-extrabold uppercase rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 flex items-center space-x-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                            <span>EN CURSO / PENDIENTE</span>
+                            <span>EN CURSO</span>
                           </span>
                         )}
 

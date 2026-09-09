@@ -124,7 +124,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account'
+          }
         }
       });
       if (error) {
@@ -132,7 +135,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
       }
     } catch (err: any) {
       console.error('Error al iniciar sesión con Google:', err);
-      setErrorMsg(err.message || 'Error al autenticar con Google');
+      setErrorMsg(translateAuthError(err.message || 'Error al autenticar con Google'));
       setIsSubmitting(false);
     }
   };

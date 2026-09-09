@@ -367,6 +367,10 @@ export const App: React.FC = () => {
         } catch (e) {
           console.warn('Error al verificar perfil de usuario en DB:', e);
           setShowOnboardingModal(true);
+        } finally {
+          if (isMounted) {
+            setIsAuthChecking(false);
+          }
         }
 
         // Limpieza del querystring de OAuth si existía code
@@ -383,8 +387,27 @@ export const App: React.FC = () => {
         setUserProfile(null);
         setCollaboratorAvatar('');
         localStorage.removeItem('audimas_collaborator_avatar');
+        if (isMounted) {
+          setIsAuthChecking(false);
+        }
       }
     };
+
+    // 0. Capturar posibles errores de OAuth en Hash/Query String de la URL
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashString = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
+      const hashParams = new URLSearchParams(hashString);
+
+      const urlError = searchParams.get('error') || hashParams.get('error') || searchParams.get('error_code') || hashParams.get('error_code');
+      const urlErrorDesc = searchParams.get('error_description') || hashParams.get('error_description');
+
+      if (urlError || urlErrorDesc) {
+        const rawMsg = urlErrorDesc ? decodeURIComponent(urlErrorDesc.replace(/\+/g, ' ')) : 'Ocurrió un error en la autenticación con Google.';
+        sessionStorage.setItem('audi_auth_error', rawMsg);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {}
 
     // 1. Suscribirse a los cambios de estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
@@ -395,19 +418,26 @@ export const App: React.FC = () => {
           setUser(null);
           setSession(null);
           setUserProfile(null);
+          setIsAuthChecking(false);
+        }
+      } else {
+        if (isMounted) {
+          setIsAuthChecking(false);
         }
       }
-      if (isMounted) setIsAuthChecking(false);
     });
 
     // 2. Verificación de sesión persistente activa al recargar
     supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
       if (activeSession?.user) {
         processActiveUser(activeSession);
+      } else {
+        if (isMounted) {
+          setIsAuthChecking(false);
+        }
       }
     }).catch(err => {
       console.warn('Error al verificar sesión inicial:', err);
-    }).finally(() => {
       if (isMounted) {
         setIsAuthChecking(false);
       }
@@ -770,7 +800,7 @@ export const App: React.FC = () => {
   };
 
   // 1. PANTALLA DE CARGA DE CREDENCIALES (Loading Gate para evitar "flashes" al recargar)
-  if (isAuthChecking) {
+  if (isAuthChecking || (user && !userProfile)) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0038a8] via-[#001f66] to-[#000d26] text-white flex flex-col items-center justify-center space-y-4 font-sans select-none p-4 animate-fade-in">
         <Loader2 className="w-10 h-10 text-sky-400 animate-spin" />

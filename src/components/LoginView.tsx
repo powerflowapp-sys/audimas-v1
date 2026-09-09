@@ -215,12 +215,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
 
         if (profile) {
           if (profile.estado === 'pendiente_aprobacion') {
-            const blockMsg = 'Tu cuenta aún está pendiente de aprobación por el Administrador. No podés ingresar hasta que sea autorizada.';
-            sessionStorage.setItem('audi_auth_error', blockMsg);
-            setErrorMsg(blockMsg);
-            await supabase.auth.signOut();
-            setErrorMsg(blockMsg);
-            setIsSubmitting(false);
+            if (onSuccess) onSuccess();
             return;
           }
 
@@ -376,14 +371,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
           console.warn('⚠️ No se pudo registrar profile en DB:', profErr.message);
         }
 
-        // Cierre de sesión preventivo para evitar ingreso no aprobado
-        await supabase.auth.signOut();
-
         const okMsg = "Tu solicitud fue enviada y está en proceso de revisión. El Administrador del sistema debe autorizar tu cuenta para que puedas acceder a la suite.";
         setSuccessMsg(okMsg);
-        setMode('LOGIN');
-        setEmail(cleanEmail);
-        setPassword('');
         
         // Reset form completamente para evitar reenvíos accidentales
         setNombreApellido('');
@@ -391,6 +380,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
         setSignupTelefono('');
         setSignupPassword('');
         setSignupConfirmPassword('');
+
+        if (!signUpData.session) {
+          setEmail(cleanEmail);
+          setPassword('');
+        }
       }
     } catch (err: any) {
       console.error('Error al registrar colaborador:', err);
@@ -531,7 +525,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
         )}
 
         {successMsg && (
-          <div className="p-4 bg-emerald-950/90 border-2 border-emerald-500/50 rounded-2xl flex flex-col space-y-1.5 text-emerald-100 text-xs text-left shadow-xl backdrop-blur-md animate-fade-in">
+          <div className="p-4 bg-emerald-950/90 border-2 border-emerald-500/50 rounded-2xl flex flex-col space-y-2 text-emerald-100 text-xs text-left shadow-xl backdrop-blur-md animate-fade-in">
             <div className="flex items-center space-x-2 text-emerald-400 font-['Chakra_Petch'] font-black text-sm uppercase tracking-wider">
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
               <span>¡Registro recibido con éxito!</span>
@@ -539,6 +533,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
             <p className="text-emerald-200/90 text-xs leading-relaxed font-medium pl-7">
               "{successMsg}"
             </p>
+            {mode === 'SIGNUP' && (
+              <div className="pt-1 pl-7">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('LOGIN');
+                    setSuccessMsg(null);
+                  }}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 shadow-md inline-flex items-center space-x-1"
+                >
+                  <span>Entendido / Volver al Login</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 

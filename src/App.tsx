@@ -60,6 +60,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { SuperAdminView } from './components/SuperAdminView';
 import { CamionesPlusView } from './components/CamionesPlusView';
 import { ProfileColaborador } from './types';
+import { PendingApprovalView } from './components/PendingApprovalView';
 import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from './utils/cargoUtils';
 
 
@@ -193,13 +194,13 @@ export const App: React.FC = () => {
             userObj?.identities?.some((i: any) => i.provider === 'google')
           );
 
-          // Auto-provisioning para usuarios nuevos que ingresan vía Google OAuth sin registro en DB
-          if (!dbProfile && isGoogleUser) {
-            const rawGoogleName = userObj.user_metadata?.full_name || userObj.user_metadata?.name || userEmail?.split('@')[0] || 'COLABORADOR';
-            const formattedName = rawGoogleName.trim().toUpperCase();
-            const googleAvatar = userObj.user_metadata?.avatar_url || userObj.user_metadata?.picture || null;
+          // Auto-provisioning para usuarios nuevos (Google OAuth o Registro) sin registro en DB
+          if (!dbProfile) {
+            const rawName = userObj.user_metadata?.full_name || userObj.user_metadata?.name || userEmail?.split('@')[0] || 'COLABORADOR';
+            const formattedName = rawName.trim().toUpperCase();
+            const avatarUrl = userObj.user_metadata?.avatar_url || userObj.user_metadata?.picture || null;
 
-            const newGoogleProfile = {
+            const newProfilePayload = {
               id: userObj.id,
               email: userEmail || '',
               full_name: formattedName,
@@ -208,9 +209,9 @@ export const App: React.FC = () => {
               tienda_codigo: '1031',
               tienda_nombre: '1031 - Tienda Jujuy',
               sector: 'Operaciones Back',
-              estado: 'activo',
-              origen: 'Google',
-              avatar_url: googleAvatar,
+              estado: 'pendiente_aprobacion',
+              origen: isGoogleUser ? 'Google' : 'Nativo',
+              avatar_url: avatarUrl,
               requiere_onboarding: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
@@ -218,36 +219,33 @@ export const App: React.FC = () => {
 
             const { data: createdProfile, error: createErr } = await supabase
               .from('profiles')
-              .upsert(newGoogleProfile, { onConflict: 'id' })
+              .upsert(newProfilePayload, { onConflict: 'id' })
               .select('*')
               .maybeSingle();
 
             if (!createErr && createdProfile) {
               dbProfile = createdProfile;
             } else {
-              dbProfile = newGoogleProfile as any;
+              dbProfile = newProfilePayload as any;
             }
           }
 
           if (dbProfile) {
-            // Si es usuario de Google y su perfil fue creado previamente en estado pendiente por un trigger genérico, activarlo automáticamente
-            if (isGoogleUser && dbProfile.estado === 'pendiente_aprobacion') {
-              dbProfile.estado = 'activo';
-              await supabase
-                .from('profiles')
-                .update({ estado: 'activo', origen: 'Google', updated_at: new Date().toISOString() })
-                .eq('id', userObj.id);
-            }
+            setUserProfile(dbProfile as ProfileColaborador);
 
-            if (dbProfile.estado === 'suspendido' || dbProfile.estado === 'inactivo' || (!isGoogleUser && dbProfile.estado === 'pendiente_aprobacion')) {
-              const blockMsg = dbProfile.estado === 'pendiente_aprobacion'
-                ? 'Tu cuenta aún está pendiente de aprobación por el Administrador. No podés ingresar hasta que sea autorizada.'
-                : 'Tu cuenta se encuentra suspendida o inactiva. Contactá al Administrador.';
+            if (dbProfile.estado === 'suspendido' || dbProfile.estado === 'inactivo') {
+              const blockMsg = 'Tu cuenta se encuentra suspendida o inactiva. Contactá al Administrador.';
               sessionStorage.setItem('audi_auth_error', blockMsg);
               await supabase.auth.signOut();
               setUser(null);
               setSession(null);
               setUserProfile(null);
+              if (isMounted) setIsAuthChecking(false);
+              return;
+            }
+
+            if (dbProfile.estado === 'pendiente_aprobacion' || dbProfile.estado === 'pendiente') {
+              setShowOnboardingModal(false);
               if (isMounted) setIsAuthChecking(false);
               return;
             }
@@ -796,6 +794,31 @@ export const App: React.FC = () => {
     return (
       <LoginView
         onSuccess={() => {}}
+        onSuperAdminAccess={handleEnterSuperAdmin}
+      />
+    );
+  }
+
+  // 4. VISTA DE PENDIENTE DE APROBACIÓN PARA NUEVOS USUARIOS
+  if (userProfile?.estado === 'pendiente_aprobacion' || userProfile?.estado === 'pendiente') {
+    return (
+      <PendingApprovalView
+        user={user}
+        profile={userProfile}
+        onSignOut={handleSignOut}
+        onCheckStatus={async () => {
+          if (user?.id) {
+            const { data: refreshedProfile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            if (refreshedProfile) {
+              setUserProfile(refreshedProfile as ProfileColaborador);
+            }
+          }
+        }}
         onSuperAdminAccess={handleEnterSuperAdmin}
       />
     );

@@ -316,6 +316,14 @@ export const formatWhatsAppNumber = (rawPhone?: string | null): string => {
   return digits;
 };
 
+/**
+ * Genera el mensaje oficial preestablecido de aprobación de cuenta para enviar por WhatsApp.
+ */
+export const buildMensajeAprobacionWhatsApp = (nombre?: string | null): string => {
+  const cleanName = nombre ? nombre.trim() : 'Colaborador';
+  return `¡Hola ${cleanName}! Te informamos desde la administración de OperaMAS que tu cuenta ha sido APROBADA con éxito.\n\nYa podés ingresar a la suite con tus credenciales:\n👉 https://audimas-v1.vercel.app\n\n¡Bienvenido al equipo!`;
+};
+
 
 
 

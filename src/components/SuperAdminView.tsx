@@ -17,7 +17,7 @@ import {
   deleteColaboradorProfile
 } from '../services/superAdminService';
 import { ProfileColaborador, TiendaDinamica, SectorDinamico, EstadoColaborador } from '../types';
-import { formatToTitleCase, formatWhatsAppNumber } from '../utils/formatUtils';
+import { formatToTitleCase, formatWhatsAppNumber, buildMensajeAprobacionWhatsApp } from '../utils/formatUtils';
 import {
   Shield,
   Users,
@@ -155,6 +155,14 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ onExit }) => {
     try {
       await updateColaboradorEstado(col.id, 'activo');
       showNotification('success', `Colaborador ${col.nombre_apellido} aprobado exitosamente.`);
+
+      if (col.telefono && col.telefono.trim() !== '') {
+        const phoneFormatted = formatWhatsAppNumber(col.telefono);
+        const mensaje = buildMensajeAprobacionWhatsApp(col.nombre_apellido);
+        const waUrl = `https://wa.me/${phoneFormatted}?text=${encodeURIComponent(mensaje)}`;
+        window.open(waUrl, '_blank');
+      }
+
       await loadData();
     } catch (err: any) {
       showNotification('error', `Error al aprobar colaborador: ${err.message}`);
@@ -628,11 +636,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ onExit }) => {
                                 <span>✉️ {col.email}</span>
                                 {hasTelefono ? (
                                   <a
-                                    href={`https://wa.me/${formatWhatsAppNumber(col.telefono)}?text=${encodeURIComponent(`Hola ${col.nombre_apellido || ''}, me contacto desde la administración de OperaMAS / AudiMAS.`)}`}
+                                    href={`https://wa.me/${formatWhatsAppNumber(col.telefono)}?text=${encodeURIComponent(buildMensajeAprobacionWhatsApp(col.nombre_apellido))}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 rounded-lg text-[11px] font-mono transition-colors"
-                                    title="Abrir chat de WhatsApp"
+                                    title="Abrir chat de WhatsApp con mensaje de bienvenida"
                                   >
                                     <Phone className="w-3 h-3 text-emerald-400" />
                                     <span>📱 {col.telefono}</span>

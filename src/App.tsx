@@ -61,6 +61,7 @@ import { SuperAdminView } from './components/SuperAdminView';
 import { CamionesPlusView } from './components/CamionesPlusView';
 import { ProfileColaborador } from './types';
 import { PendingApprovalView } from './components/PendingApprovalView';
+import { resolveUniqueCollaboratorName } from './utils/formatUtils';
 import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from './utils/cargoUtils';
 
 
@@ -197,14 +198,14 @@ export const App: React.FC = () => {
           // Auto-provisioning para usuarios nuevos (Google OAuth o Registro) sin registro en DB
           if (!dbProfile) {
             const rawName = userObj.user_metadata?.full_name || userObj.user_metadata?.name || userEmail?.split('@')[0] || 'COLABORADOR';
-            const formattedName = rawName.trim().toUpperCase();
+            const uniqueName = await resolveUniqueCollaboratorName(rawName, userObj.id);
             const avatarUrl = userObj.user_metadata?.avatar_url || userObj.user_metadata?.picture || null;
 
             const newProfilePayload = {
               id: userObj.id,
               email: userEmail || '',
-              full_name: formattedName,
-              nombre_apellido: formattedName,
+              full_name: uniqueName,
+              nombre_apellido: uniqueName,
               telefono: '',
               tienda_codigo: '1031',
               tienda_nombre: '1031 - Tienda Jujuy',

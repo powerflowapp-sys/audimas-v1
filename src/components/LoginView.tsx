@@ -8,7 +8,7 @@ import {
   DEFAULT_SECTORES
 } from '../services/superAdminService';
 import { TiendaDinamica, SectorDinamico, ProfileColaborador } from '../types';
-import { formatToTitleCase } from '../utils/formatUtils';
+import { formatToTitleCase, resolveUniqueCollaboratorName } from '../utils/formatUtils';
 import {
   Shield,
   ShieldCheck,
@@ -337,12 +337,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
         localStorage.removeItem('audimas_collaborator_avatar');
         sessionStorage.removeItem('audimas_collaborator_avatar');
 
+        // Desambiguar nombre automáticamente (ej. JORGE FLORES (1))
+        const uniqueName = await resolveUniqueCollaboratorName(formattedName, newUser.id);
+
         // 2. Insertar/Actualizar perfil en DB con estado 'pendiente_aprobacion' y avatar_url: null
         const newProfilePayload = {
           id: newUser.id,
           email: cleanEmail,
-          full_name: formattedName,
-          nombre_apellido: formattedName,
+          full_name: uniqueName,
+          nombre_apellido: uniqueName,
           telefono: signupTelefono.trim(),
           tienda_codigo: tiendaSel?.codigo || '',
           tienda_nombre: tiendaSel?.nombre || '',

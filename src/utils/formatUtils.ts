@@ -1,3 +1,5 @@
+import { supabase } from '../services/supabase';
+
 /**
  * Formatea un número para visualización limpia en la UI:
  * - Redondea como máximo a 3 decimales sin ceros innecesarios a la derecha.
@@ -216,6 +218,47 @@ export const getIniciales = (nombre?: string | null): string => {
   }
   return nombre.trim().substring(0, 2).toUpperCase();
 };
+
+/**
+ * Resuelve automáticamente un nombre único para public.profiles desambiguando duplicados:
+ * Ejemplo: Si "JORGE FLORES" ya existe en DB, retorna "JORGE FLORES (1)", "JORGE FLORES (2)", etc.
+ */
+export const resolveUniqueCollaboratorName = async (
+  rawName: string,
+  userId?: string | null
+): Promise<string> => {
+  const cleanBase = (rawName || '').trim().toUpperCase() || 'COLABORADOR';
+  let candidate = cleanBase;
+  let counter = 1;
+
+  while (counter <= 100) {
+    try {
+      let query = supabase
+        .from('profiles')
+        .select('id')
+        .ilike('full_name', candidate)
+        .limit(1);
+
+      if (userId) {
+        query = query.neq('id', userId);
+      }
+
+      const { data: existing } = await query.maybeSingle();
+
+      if (!existing) {
+        return candidate;
+      }
+    } catch {
+      return candidate;
+    }
+
+    candidate = `${cleanBase} (${counter})`;
+    counter++;
+  }
+
+  return `${cleanBase} (${Date.now()})`;
+};
+
 
 
 

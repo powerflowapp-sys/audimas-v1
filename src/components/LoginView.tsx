@@ -376,13 +376,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
         // Cierre de sesión preventivo para evitar ingreso no aprobado
         await supabase.auth.signOut();
 
-        const okMsg = '¡Solicitud enviada con éxito! Tu cuenta está registrada pero requiere aprobación del Administrador antes de poder ingresar.';
+        const okMsg = "Tu solicitud fue enviada y está en proceso de revisión. El Administrador del sistema debe autorizar tu cuenta para que puedas acceder a la suite.";
         setSuccessMsg(okMsg);
         setMode('LOGIN');
         setEmail(cleanEmail);
         setPassword('');
         
-        // Reset form
+        // Reset form completamente para evitar reenvíos accidentales
         setNombreApellido('');
         setSignupEmail('');
         setSignupTelefono('');
@@ -528,9 +528,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess, onSuperAdminAcc
         )}
 
         {successMsg && (
-          <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-2xl flex items-center space-x-2 text-emerald-200 text-xs text-left shadow-md">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="leading-tight">{successMsg}</span>
+          <div className="p-4 bg-emerald-950/90 border-2 border-emerald-500/50 rounded-2xl flex flex-col space-y-1.5 text-emerald-100 text-xs text-left shadow-xl backdrop-blur-md animate-fade-in">
+            <div className="flex items-center space-x-2 text-emerald-400 font-['Chakra_Petch'] font-black text-sm uppercase tracking-wider">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span>¡Registro recibido con éxito!</span>
+            </div>
+            <p className="text-emerald-200/90 text-xs leading-relaxed font-medium pl-7">
+              "{successMsg}"
+            </p>
           </div>
         )}
 

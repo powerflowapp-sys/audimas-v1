@@ -322,6 +322,9 @@ export const fetchProfilesColaboradores = async (): Promise<ProfileColaborador[]
   }
 
   if (list.length > 0) {
+    try {
+      localStorage.setItem('audimas_profiles_cache', JSON.stringify(list));
+    } catch {}
     return list;
   }
 

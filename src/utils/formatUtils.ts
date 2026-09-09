@@ -259,6 +259,63 @@ export const resolveUniqueCollaboratorName = async (
   return `${cleanBase} (${Date.now()})`;
 };
 
+/**
+ * Normaliza un número telefónico al formato internacional de WhatsApp de Argentina (549...):
+ * - Elimina todos los caracteres no numéricos (espacios, guiones, paréntesis, +).
+ * - Remueve el 0 inicial del código de área si lo tuviera (ej. 0388... -> 388...).
+ * - Remueve el 15 intermedio si estuviera presente.
+ * - Antepone '549' para números de 10 dígitos (ej. 3884104208 -> 5493884104208).
+ * - Normaliza números que comienzan con 54 sin 9 (ej. 54388... -> 549388...).
+ * - Deja intacto el formato completo 549... de 13 dígitos.
+ */
+export const formatWhatsAppNumber = (rawPhone?: string | null): string => {
+  if (!rawPhone) return '';
+
+  // 1. Dejar únicamente caracteres numéricos
+  let digits = String(rawPhone).replace(/\D/g, '');
+  if (!digits) return '';
+
+  // 2. Si ya viene con formato completo 549... (13 dígitos)
+  if (digits.startsWith('549') && digits.length === 13) {
+    return digits;
+  }
+
+  // 3. Si arranca con 549 pero no tiene 13 dígitos o empieza con 54 sin el 9, retirar prefijo 54/549 para limpiar número nacional
+  if (digits.startsWith('549')) {
+    digits = digits.substring(3);
+  } else if (digits.startsWith('54')) {
+    digits = digits.substring(2);
+  }
+
+  // 4. Remover 0 inicial del código de área (ej. 0388... -> 388...)
+  if (digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+
+  // 5. Remover '15' intermedio si el número nacional resultante tiene 12 dígitos
+  if (digits.length === 12) {
+    if (digits.substring(2, 4) === '15') {
+      digits = digits.substring(0, 2) + digits.substring(4);
+    } else if (digits.substring(3, 5) === '15') {
+      digits = digits.substring(0, 3) + digits.substring(5);
+    } else if (digits.substring(4, 6) === '15') {
+      digits = digits.substring(0, 4) + digits.substring(6);
+    }
+  }
+
+  // 6. Si el número nacional resultante tiene 10 dígitos, anteponer 549
+  if (digits.length === 10) {
+    return `549${digits}`;
+  }
+
+  // Fallback: si no empieza con 549, anteponer 549
+  if (!digits.startsWith('549')) {
+    return `549${digits}`;
+  }
+
+  return digits;
+};
+
 
 
 

@@ -17,7 +17,7 @@ import {
   deleteColaboradorProfile
 } from '../services/superAdminService';
 import { ProfileColaborador, TiendaDinamica, SectorDinamico, EstadoColaborador } from '../types';
-import { formatToTitleCase } from '../utils/formatUtils';
+import { formatToTitleCase, formatWhatsAppNumber } from '../utils/formatUtils';
 import {
   Shield,
   Users,
@@ -628,7 +628,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ onExit }) => {
                                 <span>✉️ {col.email}</span>
                                 {hasTelefono ? (
                                   <a
-                                    href={`https://wa.me/${col.telefono!.replace(/\D/g, '')}`}
+                                    href={`https://wa.me/${formatWhatsAppNumber(col.telefono)}?text=${encodeURIComponent(`Hola ${col.nombre_apellido || ''}, me contacto desde la administración de OperaMAS / AudiMAS.`)}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 rounded-lg text-[11px] font-mono transition-colors"

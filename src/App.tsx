@@ -181,14 +181,65 @@ export const App: React.FC = () => {
         try {
           const isCompletedLocal = localStorage.getItem('onboarding_completed') === 'true';
 
-          const { data: dbProfile } = await supabase
+          let { data: dbProfile } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', userObj.id)
             .maybeSingle();
 
+          const isGoogleUser = Boolean(
+            userObj?.app_metadata?.provider === 'google' || 
+            userObj?.user_metadata?.iss?.includes('google') ||
+            userObj?.identities?.some((i: any) => i.provider === 'google')
+          );
+
+          // Auto-provisioning para usuarios nuevos que ingresan vía Google OAuth sin registro en DB
+          if (!dbProfile && isGoogleUser) {
+            const rawGoogleName = userObj.user_metadata?.full_name || userObj.user_metadata?.name || userEmail?.split('@')[0] || 'COLABORADOR';
+            const formattedName = rawGoogleName.trim().toUpperCase();
+            const googleAvatar = userObj.user_metadata?.avatar_url || userObj.user_metadata?.picture || null;
+
+            const newGoogleProfile = {
+              id: userObj.id,
+              email: userEmail || '',
+              full_name: formattedName,
+              nombre_apellido: formattedName,
+              telefono: '',
+              tienda_codigo: '1031',
+              tienda_nombre: '1031 - Tienda Jujuy',
+              sector: 'Operaciones Back',
+              estado: 'activo',
+              origen: 'Google',
+              avatar_url: googleAvatar,
+              requiere_onboarding: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+
+            const { data: createdProfile, error: createErr } = await supabase
+              .from('profiles')
+              .upsert(newGoogleProfile, { onConflict: 'id' })
+              .select('*')
+              .maybeSingle();
+
+            if (!createErr && createdProfile) {
+              dbProfile = createdProfile;
+            } else {
+              dbProfile = newGoogleProfile as any;
+            }
+          }
+
           if (dbProfile) {
-            if (dbProfile.estado === 'pendiente_aprobacion' || dbProfile.estado === 'suspendido' || dbProfile.estado === 'inactivo') {
+            // Si es usuario de Google y su perfil fue creado previamente en estado pendiente por un trigger genérico, activarlo automáticamente
+            if (isGoogleUser && dbProfile.estado === 'pendiente_aprobacion') {
+              dbProfile.estado = 'activo';
+              await supabase
+                .from('profiles')
+                .update({ estado: 'activo', origen: 'Google', updated_at: new Date().toISOString() })
+                .eq('id', userObj.id);
+            }
+
+            if (dbProfile.estado === 'suspendido' || dbProfile.estado === 'inactivo' || (!isGoogleUser && dbProfile.estado === 'pendiente_aprobacion')) {
               const blockMsg = dbProfile.estado === 'pendiente_aprobacion'
                 ? 'Tu cuenta aún está pendiente de aprobación por el Administrador. No podés ingresar hasta que sea autorizada.'
                 : 'Tu cuenta se encuentra suspendida o inactiva. Contactá al Administrador.';

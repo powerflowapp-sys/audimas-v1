@@ -146,7 +146,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
 
       const formattedName = formatToTitleCase(nombreApellido.trim());
 
-      const finalEstado = profile?.estado || (isGoogleUser ? 'activo' : 'pendiente_aprobacion');
+      const finalEstado = isGoogleUser ? 'activo' : (profile?.estado && profile.estado !== 'pendiente_aprobacion' ? profile.estado : 'pendiente_aprobacion');
       const googleAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || profile?.avatar_url || null;
 
       const updatedProfile: ProfileColaborador = {

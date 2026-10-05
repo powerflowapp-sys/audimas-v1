@@ -770,7 +770,7 @@ export const ScannerView: React.FC<ScannerViewProps> = ({
 
     // Si fue hallado en maestro_productos V8
     const descripcionV8 = foundItemOrProduct.descripcion || foundItemOrProduct.nombre || '';
-    setSobranteUpc(verifiedUpc);
+    setSobranteUpc(foundItemOrProduct.upc || verifiedUpc);
     setSobranteDescripcion(descripcionV8 ? `[V8] ${descripcionV8}` : '');
     setIsSobranteModalOpen(true);
   };

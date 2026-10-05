@@ -1,4 +1,5 @@
 import { supabase } from '../services/supabase';
+import { getBarcodeVariants } from './barcodeUtils';
 
 /**
  * Formatea un número para visualización limpia en la UI:
@@ -172,8 +173,29 @@ export const getItemCostoReferencial = (
   const cleanUpc = (item.upc || '').trim().toUpperCase();
 
   if (maestroMap) {
-    const maestroCost = (cleanSku ? maestroMap.get(cleanSku) : undefined) ||
-                        (cleanUpc ? maestroMap.get(cleanUpc) : undefined);
+    let maestroCost = (cleanSku ? maestroMap.get(cleanSku) : undefined) ||
+                      (cleanUpc ? maestroMap.get(cleanUpc) : undefined);
+
+    if (!maestroCost || maestroCost <= 0) {
+      if (cleanSku) {
+        const skuVariants = getBarcodeVariants(cleanSku);
+        for (const v of skuVariants) {
+          const val = maestroMap.get(v.toUpperCase());
+          if (val && val > 0) { maestroCost = val; break; }
+        }
+      }
+    }
+
+    if (!maestroCost || maestroCost <= 0) {
+      if (cleanUpc) {
+        const upcVariants = getBarcodeVariants(cleanUpc);
+        for (const v of upcVariants) {
+          const val = maestroMap.get(v.toUpperCase());
+          if (val && val > 0) { maestroCost = val; break; }
+        }
+      }
+    }
+
     if (maestroCost && maestroCost > 0) {
       return maestroCost;
     }

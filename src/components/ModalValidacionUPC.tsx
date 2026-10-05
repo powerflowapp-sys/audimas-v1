@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Search, Check, X, ShieldAlert, ArrowRight, Scan } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { matchBarcode, sanitizeBarcode } from '../utils/barcodeUtils';
+import { matchBarcode, sanitizeBarcode, getBarcodeVariants } from '../utils/barcodeUtils';
 import { AuditoriaItem } from '../types';
 
 interface Props {
@@ -59,12 +59,31 @@ export const ModalValidacionUPC: React.FC<Props> = ({
         return;
       }
 
-      // 2. Buscar en maestro_productos V8 de Supabase
-      const { data: productoMaestro } = await supabase
+      // 2. Buscar en maestro_productos V8 de Supabase con coincidencia elástica de ceros a la izquierda y padding
+      const variants = getBarcodeVariants(cleanUpc);
+      let productoMaestro: any = null;
+
+      // Buscar por UPC entre las variantes posibles
+      const { data: productosPorUpc } = await supabase
         .from('maestro_productos')
         .select('*')
-        .or(`upc.eq.${cleanUpc},sku.eq.${cleanUpc}`)
-        .maybeSingle();
+        .in('upc', variants)
+        .limit(1);
+
+      if (productosPorUpc && productosPorUpc.length > 0) {
+        productoMaestro = productosPorUpc[0];
+      } else {
+        // Buscar por SKU entre las variantes posibles
+        const { data: productosPorSku } = await supabase
+          .from('maestro_productos')
+          .select('*')
+          .in('sku', variants)
+          .limit(1);
+
+        if (productosPorSku && productosPorSku.length > 0) {
+          productoMaestro = productosPorSku[0];
+        }
+      }
 
       if (productoMaestro) {
         setIsVerifying(false);

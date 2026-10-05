@@ -39,18 +39,11 @@ export const eliminarCamionEnCascada = async (naeId: string): Promise<boolean> =
     // 2. Borrado estricto de auditoria_items
     await supabase.from('auditoria_items').delete().eq('nae_id', naeId);
 
-    // 3. Borrado estricto de reclamos_magma
-    await supabase.from('reclamos_magma').delete().eq('nae_id', naeId);
+    // 3. Preservar reclamos_magma para trazabilidad histórica legal de diferencias y reclamos comerciales
+    // (NO se elimina de reclamos_magma para asegurar que los reclamos persistan independientemente de la rotación de camiones)
 
-    // Limpieza de cachés locales
+    // Limpieza de cachés locales de snapshots (preservando reclamos_magma)
     try {
-      const recRaw = localStorage.getItem('audimas_reclamos_magma_cache');
-      if (recRaw) {
-        const recMap = JSON.parse(recRaw);
-        delete recMap[naeId];
-        delete recMap[`rec_${naeId}`];
-        localStorage.setItem('audimas_reclamos_magma_cache', JSON.stringify(recMap));
-      }
       const snapRaw = localStorage.getItem('audimas_report_snapshots_v1');
       if (snapRaw) {
         const snapMap = JSON.parse(snapRaw);

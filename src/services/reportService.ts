@@ -8,7 +8,74 @@ import {
 } from '../types';
 import { parseFotoUrls } from '../utils/imageCompressor';
 import { getItemCostoReferencial, getUomLabel, calcularUnidadesFisicasItem } from '../utils/formatUtils';
+import { getBarcodeVariants } from '../utils/barcodeUtils';
 import { sanitizeAuditoriaItemForDb } from './excelParsers';
+
+/**
+ * Consulta de forma focalizada en maestro_productos únicamente los SKUs y UPCs presentes en los items dados,
+ * expandiendo con variantes elásticas de ceros a la izquierda (evitando el límite de 1.000 filas de PostgREST).
+ */
+export const obtenerMaestroCostMapParaItems = async (
+  items: Array<{ sku?: string; upc?: string; costo_unitario?: number; costo_unitario_ap?: number; costo_unitario_aplicado?: number }>
+): Promise<Map<string, number>> => {
+  const maestroCostMap = new Map<string, number>();
+  if (!items || items.length === 0) return maestroCostMap;
+
+  try {
+    const targetSkus = new Set<string>();
+    const targetUpcs = new Set<string>();
+
+    items.forEach(it => {
+      if (it.sku) {
+        const cleanS = it.sku.trim();
+        if (cleanS) {
+          getBarcodeVariants(cleanS).forEach(v => targetSkus.add(v));
+        }
+      }
+      if (it.upc) {
+        const cleanU = it.upc.trim();
+        if (cleanU) {
+          getBarcodeVariants(cleanU).forEach(v => targetUpcs.add(v));
+        }
+      }
+    });
+
+    const skuArray = Array.from(targetSkus);
+    const upcArray = Array.from(targetUpcs);
+    const BATCH_SIZE = 80;
+
+    const fetchBatches = async (column: 'sku' | 'upc', values: string[]) => {
+      for (let i = 0; i < values.length; i += BATCH_SIZE) {
+        const chunk = values.slice(i, i + BATCH_SIZE);
+        const { data, error } = await supabase
+          .from('maestro_productos')
+          .select('sku, upc, costo_unitario, precio_retail')
+          .in(column, chunk);
+
+        if (!error && data) {
+          data.forEach(m => {
+            const c = Number(m.costo_unitario) || Number(m.precio_retail) || 0;
+            if (c > 0) {
+              if (m.sku) {
+                getBarcodeVariants(m.sku).forEach(v => maestroCostMap.set(v.toUpperCase(), c));
+              }
+              if (m.upc) {
+                getBarcodeVariants(m.upc).forEach(v => maestroCostMap.set(v.toUpperCase(), c));
+              }
+            }
+          });
+        }
+      }
+    };
+
+    if (skuArray.length > 0) await fetchBatches('sku', skuArray);
+    if (upcArray.length > 0) await fetchBatches('upc', upcArray);
+  } catch (err) {
+    console.warn('⚠️ Error al consultar maestro focalizado:', err);
+  }
+
+  return maestroCostMap;
+};
 
 /**
  * Calcula las métricas generales de resumen de la auditoría
@@ -355,19 +422,8 @@ export const persisitirCostosReclamoMagma = async (naeId: string): Promise<void>
 
     if (!items || items.length === 0) return;
 
-    // Mapa de costos desde Catálogo Maestro para Prioridad 2
-    const maestroCostMap = new Map<string, number>();
-    const { data: maestroItems } = await supabase
-      .from('maestro_productos')
-      .select('sku, upc, costo_unitario');
-
-    maestroItems?.forEach(m => {
-      const c = Number(m.costo_unitario) || 0;
-      if (c > 0) {
-        if (m.sku) maestroCostMap.set(m.sku.trim().toUpperCase(), c);
-        if (m.upc) maestroCostMap.set(m.upc.trim().toUpperCase(), c);
-      }
-    });
+    // Mapa de costos desde Catálogo Maestro para Prioridad 2 (Focalizado y elástico)
+    const maestroCostMap = await obtenerMaestroCostMapParaItems(items);
 
     const itemsToUpdate: any[] = [];
 
@@ -690,22 +746,8 @@ export const cerrarCamionNae = async (
     let cantUnidadesAfectadas = 0;
     const skuSet = new Set<string>();
 
-    // Mapa de costos desde Catálogo Maestro para asegurar costos si algún ítem no lo tiene
-    const maestroCostMap = new Map<string, number>();
-    try {
-      const { data: maestroItems } = await supabase
-        .from('maestro_productos')
-        .select('sku, upc, costo_unitario, precio_retail');
-      maestroItems?.forEach(m => {
-        const c = Number(m.costo_unitario) || Number(m.precio_retail) || 0;
-        if (c > 0) {
-          if (m.sku) maestroCostMap.set(m.sku.trim().toUpperCase(), c);
-          if (m.upc) maestroCostMap.set(m.upc.trim().toUpperCase(), c);
-        }
-      });
-    } catch (e) {
-      console.warn('⚠️ Error al consultar maestro en cierre:', e);
-    }
+    // Mapa de costos desde Catálogo Maestro para asegurar costos si algún ítem no lo tiene (Focalizado y elástico)
+    const maestroCostMap = await obtenerMaestroCostMapParaItems(itemsList);
 
     itemsList.forEach(it => {
       const uEsp = Number(it.unidades_esperadas || 0);
@@ -1472,23 +1514,8 @@ export const exportarAuditoriaExcel = async (
     cell.border = BORDER_GREY;
   });
 
-  // Mapa de costos desde Catálogo Maestro para fallback (Prioridad 2)
-  const maestroCostMap = new Map<string, number>();
-  try {
-    const { data: maestroItems } = await supabase
-      .from('maestro_productos')
-      .select('sku, upc, costo_unitario');
-
-    maestroItems?.forEach(m => {
-      const c = Number(m.costo_unitario) || 0;
-      if (c > 0) {
-        if (m.sku) maestroCostMap.set(m.sku.trim().toUpperCase(), c);
-        if (m.upc) maestroCostMap.set(m.upc.trim().toUpperCase(), c);
-      }
-    });
-  } catch (e) {
-    console.warn('Advertencia al consultar costos del Catálogo Maestro para Excel:', e);
-  }
+  // Mapa de costos desde Catálogo Maestro para fallback (Prioridad 2 - Focalizado y elástico)
+  const maestroCostMap = await obtenerMaestroCostMapParaItems(items);
 
   // Ordenamiento automático por defecto: FALTANTE, SOBRANTE, CORRECTO, NO FACTURADO
   const getPriorityOrder = (it: AuditoriaItem): number => {

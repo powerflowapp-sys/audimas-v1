@@ -9,7 +9,8 @@ import {
   AlertTriangle,
   Package,
   X,
-  Trash2
+  Trash2,
+  Search
 } from 'lucide-react';
 import { 
   previewMaestroExcel, 
@@ -29,12 +30,14 @@ interface CargarMaestroViewProps {
   onBack: () => void;
   onHome: () => void;
   onSuccess: (totalUploaded: number) => void;
+  onOpenConsulta?: () => void;
 }
 
 export const CargarMaestroView: React.FC<CargarMaestroViewProps> = ({
   onBack,
   onHome,
-  onSuccess
+  onSuccess,
+  onOpenConsulta
 }) => {
   const [catalogCount, setCatalogCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState<boolean>(true);
@@ -250,8 +253,19 @@ export const CargarMaestroView: React.FC<CargarMaestroViewProps> = ({
             Última actualización / Estado de la base general SIM
           </p>
 
-          {/* Botón de Vaciar Catálogo Maestro */}
-          <div className="pt-2 border-t border-sky-500/10">
+          {/* Botón de Consultar Catálogo / Buscador de Códigos y Vaciar Catálogo */}
+          <div className="pt-2 border-t border-sky-500/10 space-y-2">
+            {onOpenConsulta && (
+              <button
+                type="button"
+                onClick={onOpenConsulta}
+                className="w-full py-2.5 px-3 bg-sky-600/30 hover:bg-sky-600/50 text-sky-200 hover:text-white border border-sky-400/40 rounded-xl font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg active:scale-[0.98]"
+              >
+                <Search className="w-4 h-4 text-sky-300 shrink-0" />
+                <span>CONSULTAR ARTÍCULO EN CATÁLOGO</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowDeleteModal(true)}

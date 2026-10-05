@@ -59,13 +59,14 @@ import { DashboardView } from './components/DashboardView';
 import { OnboardingModal } from './components/OnboardingModal';
 import { SuperAdminView } from './components/SuperAdminView';
 import { CamionesPlusView } from './components/CamionesPlusView';
+import { ConsultaMaestroView } from './components/ConsultaMaestroView';
 import { ProfileColaborador } from './types';
 import { PendingApprovalView } from './components/PendingApprovalView';
 import { resolveUniqueCollaboratorName } from './utils/formatUtils';
 import { getBadgeClasificacionCarga, getBadgeModalidadAuditoria } from './utils/cargoUtils';
 
 
-type ViewMode = 'HUB' | 'LIST' | 'SCAN' | 'CIERRE' | 'UPLOAD_NAE' | 'UPLOAD_MAESTRO' | 'HISTORIAL' | 'BANDEMAS' | 'CONFIG_MODALIDAD' | 'ADJUNTAR_AP' | 'RECLAMOS_MAGMA' | 'DASHBOARD' | 'SUPERADMIN' | 'CAMIONES_PLUS';
+type ViewMode = 'HUB' | 'LIST' | 'SCAN' | 'CIERRE' | 'UPLOAD_NAE' | 'UPLOAD_MAESTRO' | 'HISTORIAL' | 'BANDEMAS' | 'CONFIG_MODALIDAD' | 'ADJUNTAR_AP' | 'RECLAMOS_MAGMA' | 'DASHBOARD' | 'SUPERADMIN' | 'CAMIONES_PLUS' | 'CONSULTA_MAESTRO';
 
 const getInitialViewState = (): { view: ViewMode; naeId: string | null } => {
   try {
@@ -77,7 +78,7 @@ const getInitialViewState = (): { view: ViewMode; naeId: string | null } => {
     const storedNae = localStorage.getItem('audimas_active_nae') || sessionStorage.getItem('audimas_active_nae');
     const isSuperAdminStored = localStorage.getItem('audimas_superadmin_active') === 'true';
 
-    const validViews: ViewMode[] = ['HUB', 'LIST', 'SCAN', 'CIERRE', 'UPLOAD_NAE', 'UPLOAD_MAESTRO', 'HISTORIAL', 'BANDEMAS', 'CONFIG_MODALIDAD', 'ADJUNTAR_AP', 'RECLAMOS_MAGMA', 'DASHBOARD', 'SUPERADMIN', 'CAMIONES_PLUS'];
+    const validViews: ViewMode[] = ['HUB', 'LIST', 'SCAN', 'CIERRE', 'UPLOAD_NAE', 'UPLOAD_MAESTRO', 'HISTORIAL', 'BANDEMAS', 'CONFIG_MODALIDAD', 'ADJUNTAR_AP', 'RECLAMOS_MAGMA', 'DASHBOARD', 'SUPERADMIN', 'CAMIONES_PLUS', 'CONSULTA_MAESTRO'];
     
     let finalView: ViewMode = (urlView && validViews.includes(urlView))
       ? urlView 
@@ -1257,11 +1258,20 @@ export const App: React.FC = () => {
               navigateTo('LIST');
             }}
             onHome={() => navigateTo('HUB')}
+            onOpenConsulta={() => navigateTo('CONSULTA_MAESTRO')}
             onSuccess={(totalUploaded) => {
               fetchCamiones();
               setLastNotification(`Catálogo maestro actualizado exitosamente con ${totalUploaded.toLocaleString()} artículos.`);
               navigateTo('LIST');
             }}
+          />
+        );
+
+      case 'CONSULTA_MAESTRO':
+        return (
+          <ConsultaMaestroView
+            onBack={() => navigateTo('LIST')}
+            onHome={() => navigateTo('HUB')}
           />
         );
 
@@ -1393,6 +1403,10 @@ export const App: React.FC = () => {
         }}
         onOpenCatalogoMaestro={() => {
           navigateTo('UPLOAD_MAESTRO');
+          setIsDrawerOpen(false);
+        }}
+        onOpenConsultaMaestro={() => {
+          navigateTo('CONSULTA_MAESTRO');
           setIsDrawerOpen(false);
         }}
         onOpenHistorialReportes={() => {

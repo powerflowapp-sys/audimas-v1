@@ -14,7 +14,8 @@ import {
   Home,
   Smartphone,
   PieChart,
-  Snowflake
+  Snowflake,
+  Search
 } from 'lucide-react';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 
@@ -33,6 +34,7 @@ interface SidebarDrawerProps {
   onOpenCargarCamionPerecedero?: () => void;
   onOpenCargarCamion: () => void;
   onOpenCatalogoMaestro: () => void;
+  onOpenConsultaMaestro?: () => void;
   onOpenHistorialReportes?: () => void;
   onOpenReclamosMagma?: () => void;
   onOpenBandeMas?: () => void;
@@ -56,6 +58,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onOpenCargarCamionPerecedero,
   onOpenCargarCamion,
   onOpenCatalogoMaestro,
+  onOpenConsultaMaestro,
   onOpenHistorialReportes,
   onOpenReclamosMagma,
   onOpenBandeMas,
@@ -103,6 +106,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const isReclamosActive = currentView === 'RECLAMOS_MAGMA';
   const isBandeMasActive = currentView === 'BANDEMAS';
   const isCargarCamionActive = currentView === 'UPLOAD_NAE';
+  const isConsultaMaestroActive = currentView === 'CONSULTA_MAESTRO';
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans select-none animate-fade-in">
@@ -374,6 +378,23 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               >
                 <UserCheck className="w-4 h-4 text-sky-400 shrink-0" />
                 <span>Cambiar Nombre Operario</span>
+              </button>
+
+              {/* [ 🔍 Consultar Catálogo / UPC ] */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onOpenConsultaMaestro) onOpenConsultaMaestro();
+                }}
+                className={`w-full text-xs font-semibold px-3 py-2 transition-all text-left cursor-pointer flex items-center space-x-3 rounded-xl ${
+                  isConsultaMaestroActive
+                    ? 'bg-[#0c2e59] text-white font-bold border-l-4 border-sky-400 shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-sky-500/10'
+                }`}
+              >
+                <Search className="w-4 h-4 text-sky-400 shrink-0" />
+                <span>Consultar Catálogo / UPC</span>
               </button>
 
               {/* [ 🗄️ Catálogo Maestro (SIM) ] */}

@@ -337,11 +337,16 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
       const uEsp = Number(it.unidades_esperadas || 0);
       const totalUnidades = calcularUnidadesFisicasItem(it);
 
-      const tieneDiferencia = totalUnidades !== uEsp || it.es_sobrante_no_facturado;
       const esDanado = Number(it.cantidad_danada || 0) > 0 || Boolean(it.observacion_dano) || parseFotoUrls(it.foto_dano_url || (it as any).fotos_dano_urls).length > 0;
+      const esCierreParcial = isCamionCierreParcial(camion);
+
+      // En Cierre Parcial, 'DIFERENCIAS' enfoca lo efectivamente auditado
+      const tieneDiferencia = esCierreParcial
+        ? ((totalUnidades > 0 && totalUnidades !== uEsp) || isSobranteNoFact || esDanado)
+        : (totalUnidades !== uEsp || isSobranteNoFact || esDanado);
 
       if (filterTab === 'DIFERENCIAS' && !tieneDiferencia) return false;
-      if (filterTab === 'NO_CONTADOS' && (totalUnidades > 0 || isSobranteNoFact)) return false;
+      if (filterTab === 'NO_CONTADOS' && (totalUnidades > 0 || isSobranteNoFact || uEsp === 0)) return false;
       if (filterTab === 'AGOTADOS' && !it.es_agotado_transito) return false;
       if (filterTab === 'DANADOS' && !esDanado) return false;
 
@@ -772,20 +777,27 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                 const totalFisicoEscaneado = Number(calcularUnidadesFisicasItem(item).toFixed(3));
                 const diferencia = Number((totalFisicoEscaneado - uEsp).toFixed(3));
 
-                const isSobranteNoFact = item.es_sobrante_no_facturado || (item.depto_codigo && parseInt(item.depto_codigo, 10) === 999);
+                const isSobranteNoFact = Boolean(item.es_sobrante_no_facturado) || 
+                  (item.depto_codigo ? parseInt(item.depto_codigo, 10) === 999 : false) ||
+                  (uEsp === 0 && totalFisicoEscaneado > 0);
 
-                const esFaltante = diferencia < 0 && !isSobranteNoFact;
-                const esSobrante = diferencia > 0 && uEsp > 0 && !isSobranteNoFact;
-                const esNoFacturado = isSobranteNoFact;
-                const esConforme = diferencia === 0 && !isSobranteNoFact;
+                // Clasificación estricta en las 5 categorías logísticas
+                const esDanado = Number(item.cantidad_danada || 0) > 0;
+                const esNoFacturado = isSobranteNoFact && totalFisicoEscaneado > 0;
+                const esSinContar = !isSobranteNoFact && totalFisicoEscaneado === 0 && !esDanado && uEsp > 0;
+                const esFaltanteParcial = !isSobranteNoFact && totalFisicoEscaneado > 0 && totalFisicoEscaneado < uEsp;
+                const esSobranteFactura = !isSobranteNoFact && totalFisicoEscaneado > uEsp && uEsp > 0;
+                const esConforme = !isSobranteNoFact && totalFisicoEscaneado === uEsp && uEsp > 0;
 
                 return (
                   <div 
                     key={item.id || item.upc}
                     className={`bg-[#051329]/90 border rounded-xl p-3 space-y-2 text-xs shadow-sm ${
-                      esFaltante
+                      esSinContar
+                        ? 'border-rose-500/40 bg-rose-950/20'
+                        : esFaltanteParcial
                         ? 'border-red-500/50 bg-red-950/20'
-                        : esSobrante
+                        : esSobranteFactura
                         ? 'border-amber-500/50 bg-amber-950/20'
                         : esNoFacturado
                         ? 'border-purple-500/50 bg-purple-950/20'
@@ -806,18 +818,23 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
                       </div>
 
                       <div className="text-right shrink-0">
-                        {esFaltante && (
-                          <span className="px-2 py-0.5 bg-red-500/20 text-red-400 font-bold rounded text-[10px]">
-                            Faltante: {formatNumber(Math.abs(diferencia))}u
+                        {esSinContar && (
+                          <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold rounded text-[10px]">
+                            Sin Contar (Falt. Total): -{formatNumber(uEsp)}u
                           </span>
                         )}
-                        {esSobrante && (
-                          <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 font-bold rounded text-[10px]">
+                        {esFaltanteParcial && (
+                          <span className="px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 font-bold rounded text-[10px]">
+                            Faltante Parcial: {formatNumber(Math.abs(diferencia))}u
+                          </span>
+                        )}
+                        {esSobranteFactura && (
+                          <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold rounded text-[10px]">
                             Sobrante: +{formatNumber(diferencia)}u
                           </span>
                         )}
                         {esNoFacturado && (
-                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 font-bold rounded text-[10px]">
+                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 font-bold rounded text-[10px]">
                             No Facturado (+{formatNumber(totalFisicoEscaneado)}u)
                           </span>
                         )}
@@ -1138,19 +1155,38 @@ export const CierreAuditoriaView: React.FC<CierreAuditoriaViewProps> = ({
             </div>
 
             {!closeResult.es100Conforme && (
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono">
-                <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                  Faltantes: <strong className="text-red-400">{closeResult.cantFaltantes}</strong>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 font-mono">
+                  <div className="p-2 bg-slate-950 rounded-lg border border-red-500/30 text-left">
+                    <span className="text-slate-400 block text-[9px] uppercase tracking-wider">Faltantes Parciales</span>
+                    <strong className="text-red-400 text-xs">{closeResult.cantFaltantes} un</strong>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-lg border border-rose-500/30 text-left">
+                    <span className="text-slate-400 block text-[9px] uppercase tracking-wider">Sin Contar (Falt. Total)</span>
+                    <strong className="text-rose-400 text-xs">{closeResult.cantSinContar} un</strong>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-lg border border-amber-500/30 text-left">
+                    <span className="text-slate-400 block text-[9px] uppercase tracking-wider">Sobrantes Factura</span>
+                    <strong className="text-amber-400 text-xs">{closeResult.cantSobrantes} un</strong>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-lg border border-purple-500/30 text-left">
+                    <span className="text-slate-400 block text-[9px] uppercase tracking-wider">No Facturados</span>
+                    <strong className="text-purple-400 text-xs">{closeResult.cantNoFacturados ?? 0} un</strong>
+                  </div>
+                  <div className="col-span-2 p-2 bg-slate-950 rounded-lg border border-red-700/30 flex items-center justify-between px-3">
+                    <span className="text-slate-400 text-[10px] uppercase tracking-wider">Dañados / Roturas:</span>
+                    <strong className="text-red-400 text-xs">{closeResult.cantDanados ?? closeResult.cantDaniados} un</strong>
+                  </div>
                 </div>
-                <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                  Sobrantes: <strong className="text-amber-400">{closeResult.cantSobrantes}</strong>
-                </div>
-                <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                  Dañados: <strong className="text-rose-400">{closeResult.cantDaniados}</strong>
-                </div>
-                <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                  Sin contar: <strong className="text-sky-400">{closeResult.cantSinContar}</strong>
-                </div>
+
+                {closeResult.montoReclamado !== undefined && closeResult.montoReclamado > 0 && (
+                  <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-xs font-mono text-emerald-300 flex items-center justify-between px-3">
+                    <span>Reclamo Magma Generado:</span>
+                    <strong className="font-bold text-sm text-emerald-400">
+                      ${closeResult.montoReclamado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                )}
               </div>
             )}
 

@@ -113,6 +113,7 @@ export const calcularDiscrepanciasReclamo = (
     itemKey: string;
     item: AuditoriaItem;
     motivo: 'FALTANTE' | 'SOBRANTE' | 'NO FACTURADO' | 'DAÑADO / ROTURA';
+    tipoFaltante?: 'PARCIAL' | 'TOTAL';
     cantidadAfectada: number;
     costoUnitario: number;
     totalReclamado: number;
@@ -127,7 +128,10 @@ export const calcularDiscrepanciasReclamo = (
       (uEsp === 0 && uFisicas > 0);
 
     const cantDanada = Number((Number(it.cantidad_danada || 0)).toFixed(3));
-    const costoUnitarioRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+    let costoUnitarioRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+    if (costoUnitarioRef === 0 && it.precio_retail && Number(it.precio_retail) > 0) {
+      costoUnitarioRef = Number(it.precio_retail);
+    }
 
     // EN CIERRE PARCIAL: ignorar productos sin interacción real (conteo === 0 y rotura === 0)
     if (esParcial && uFisicas === 0 && cantDanada === 0 && !isSobranteNoFact) {
@@ -150,7 +154,7 @@ export const calcularDiscrepanciasReclamo = (
         totalReclamado: totNoFact
       });
     } else if (!isSobranteNoFact) {
-      // 2. FALTANTES: uFisicas < uEsp sobre lo auditado
+      // 2. FALTANTES: uFisicas < uEsp (parciales o totales en cierre completo)
       if (uFisicas < uEsp) {
         const cantFaltante = Number((uEsp - uFisicas).toFixed(3));
         if (cantFaltante > 0) {
@@ -158,10 +162,12 @@ export const calcularDiscrepanciasReclamo = (
           totalMontoReclamado += totFaltante;
           skuSet.add(it.sku);
           cantUnidadesAfectadas += cantFaltante;
+          const esTotal = uFisicas === 0 && cantDanada === 0;
           itemsDiscrepantes.push({
             itemKey: `${it.sku}_FALTANTE`,
             item: it,
             motivo: 'FALTANTE',
+            tipoFaltante: esTotal ? 'TOTAL' : 'PARCIAL',
             cantidadAfectada: cantFaltante,
             costoUnitario: costoUnitarioRef,
             totalReclamado: totFaltante

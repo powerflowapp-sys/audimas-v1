@@ -414,11 +414,18 @@ export const persisitirCostosReclamoMagma = async (naeId: string): Promise<void>
  * - cantSinContar: Cantidad de ítems/artículos que quedaron con conteo = 0 y facturado > 0 (sin auditar).
  */
 export interface DiscrepanciasCamion {
-  cantFaltantes: number;
-  cantSobrantes: number;
-  cantDaniados: number;
-  cantSinContar: number;
+  cantFaltantes: number;       // Faltante parcial (0 < uFisicas < uEsperadas)
+  cantSobrantes: number;       // Sobrante facturado (uFisicas > uEsperadas)
+  cantNoFacturados: number;    // No Facturado (uEsperadas === 0 || es_sobrante_no_facturado)
+  cantDanados: number;         // Dañados / rotura (cantDan > 0)
+  cantDaniados: number;        // Alias de compatibilidad
+  cantSinContar: number;       // Sin Contar / Faltante Total (uFisicas === 0 && cantDan === 0)
   es100Conforme: boolean;
+  skusFaltantes?: number;
+  skusSobrantes?: number;
+  skusNoFacturados?: number;
+  skusDanados?: number;
+  skusSinContar?: number;
 }
 
 export const evaluarDiscrepanciasCamion = (
@@ -427,69 +434,94 @@ export const evaluarDiscrepanciasCamion = (
 ): DiscrepanciasCamion => {
   let cantFaltantes = 0;
   let cantSobrantes = 0;
+  let cantNoFacturados = 0;
   let cantDaniados = 0;
   let cantSinContar = 0;
+
+  let skusFaltantes = 0;
+  let skusSobrantes = 0;
+  let skusNoFacturados = 0;
+  let skusDanados = 0;
+  let skusSinContar = 0;
 
   items.forEach(it => {
     const uEsp = Number(it.unidades_esperadas || 0);
     const uEscRaw = Number(it.unidades_escaneadas || 0);
     const bEsc = Number(it.bultos_escaneados || 0);
-    const totalFisico = calcularUnidadesFisicasItem(it);
+    const totalFisico = Number(calcularUnidadesFisicasItem(it).toFixed(3));
     const cantDan = Number((Number(it.cantidad_danada || 0)).toFixed(3));
     const isSobranteNoFact = Boolean(it.es_sobrante_no_facturado) || 
-      (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false);
+      (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false) ||
+      (uEsp === 0 && totalFisico > 0);
 
     // Omitir sobrantes no facturados que quedaron en cero
     if (isSobranteNoFact && totalFisico === 0 && bEsc === 0 && uEscRaw === 0) {
       return;
     }
 
-    // EN CIERRE PARCIAL: si el producto no tuvo interacción real (conteo === 0 y rotura === 0)
-    // Se ignora del balance de diferencias (no se imputa faltante ni sin contar)
-    if (esParcial && totalFisico === 0 && cantDan === 0 && !isSobranteNoFact) {
-      return;
-    }
-
     // 1. Mercadería dañada / roturas
     if (cantDan > 0) {
       cantDaniados += cantDan;
+      skusDanados += 1;
     }
 
-    // 2. Sobrantes no facturados
+    // 2. Mercadería no facturada
     if (isSobranteNoFact) {
       if (totalFisico > 0) {
-        cantSobrantes += totalFisico;
+        cantNoFacturados += totalFisico;
+        skusNoFacturados += 1;
       }
     } else {
-      // 3. Ítems del manifiesto
-      if (totalFisico === 0 && bEsc === 0 && uEscRaw === 0 && uEsp > 0) {
-        if (!esParcial) {
-          cantSinContar += 1;
-        }
+      // 3. Ítems del manifiesto facturados
+      if (totalFisico === 0 && cantDan === 0 && uEsp > 0) {
+        // Sin Contar (Faltante Total)
+        cantSinContar += uEsp;
+        skusSinContar += 1;
       } else if (totalFisico < uEsp) {
-        // Faltante (conteo < facturado) sobre lo auditado
+        // Faltante Parcial (0 < totalFisico < uEsp)
         const dif = Number((uEsp - totalFisico).toFixed(3));
-        if (dif > 0) cantFaltantes += dif;
+        if (dif > 0) {
+          cantFaltantes += dif;
+          skusFaltantes += 1;
+        }
       } else if (totalFisico > uEsp && uEsp > 0) {
-        // Sobrante (conteo > facturado)
+        // Sobrante Facturado
         const dif = Number((totalFisico - uEsp).toFixed(3));
-        if (dif > 0) cantSobrantes += dif;
+        if (dif > 0) {
+          cantSobrantes += dif;
+          skusSobrantes += 1;
+        }
       }
     }
   });
 
   cantFaltantes = Number(cantFaltantes.toFixed(3));
   cantSobrantes = Number(cantSobrantes.toFixed(3));
+  cantNoFacturados = Number(cantNoFacturados.toFixed(3));
   cantDaniados = Number(cantDaniados.toFixed(3));
+  cantSinContar = Number(cantSinContar.toFixed(3));
 
-  const es100Conforme = cantFaltantes === 0 && cantSobrantes === 0 && cantDaniados === 0 && (esParcial ? true : cantSinContar === 0);
+  // Cierre Parcial: 100% conforme si no hay discrepancias en lo efectivamente auditado
+  // Cierre Total: 100% conforme si no hay faltantes parciales, sobrantes, no facturados, dañados NI sin contar
+  const es100Conforme = cantFaltantes === 0 && 
+    cantSobrantes === 0 && 
+    cantNoFacturados === 0 && 
+    cantDaniados === 0 && 
+    (esParcial ? true : cantSinContar === 0);
 
   return {
     cantFaltantes,
     cantSobrantes,
+    cantNoFacturados,
+    cantDanados: cantDaniados,
     cantDaniados,
     cantSinContar,
-    es100Conforme
+    es100Conforme,
+    skusFaltantes,
+    skusSobrantes,
+    skusNoFacturados,
+    skusDanados,
+    skusSinContar
   };
 };
 
@@ -498,10 +530,18 @@ export interface ResultadoCierreCamion {
   es100Conforme: boolean;
   cantFaltantes: number;
   cantSobrantes: number;
+  cantNoFacturados: number;
+  cantDanados: number;
   cantDaniados: number;
   cantSinContar: number;
+  skusFaltantes?: number;
+  skusSobrantes?: number;
+  skusNoFacturados?: number;
+  skusDanados?: number;
+  skusSinContar?: number;
   mensaje: string;
   reclamoGenerado: boolean;
+  montoReclamado?: number;
 }
 
 /**
@@ -597,6 +637,7 @@ export const cerrarCamionNae = async (
 
   let reclamoGenerado = false;
   let mensajeFeedback = '';
+  let totalMontoReclamado = 0;
 
   if (discEval.es100Conforme) {
     // OMITIR la inserción en la tabla reclamos_magma y eliminar cualquier reclamo previo
@@ -644,29 +685,57 @@ export const cerrarCamionNae = async (
 
     mensajeFeedback = logMsg;
   } else {
-    // EXISTEN DISCREPANCIAS EN LO AUDITADO
-    let totalMontoReclamado = 0;
+    // EXISTEN DISCREPANCIAS EN LA AUDITORÍA
+    totalMontoReclamado = 0;
     let cantUnidadesAfectadas = 0;
     const skuSet = new Set<string>();
+
+    // Mapa de costos desde Catálogo Maestro para asegurar costos si algún ítem no lo tiene
+    const maestroCostMap = new Map<string, number>();
+    try {
+      const { data: maestroItems } = await supabase
+        .from('maestro_productos')
+        .select('sku, upc, costo_unitario, precio_retail');
+      maestroItems?.forEach(m => {
+        const c = Number(m.costo_unitario) || Number(m.precio_retail) || 0;
+        if (c > 0) {
+          if (m.sku) maestroCostMap.set(m.sku.trim().toUpperCase(), c);
+          if (m.upc) maestroCostMap.set(m.upc.trim().toUpperCase(), c);
+        }
+      });
+    } catch (e) {
+      console.warn('⚠️ Error al consultar maestro en cierre:', e);
+    }
 
     itemsList.forEach(it => {
       const uEsp = Number(it.unidades_esperadas || 0);
       const uFisicas = calcularUnidadesFisicasItem(it);
       const cantDan = Number((Number(it.cantidad_danada || 0)).toFixed(3));
-      const isSobranteNoFact = Boolean(it.es_sobrante_no_facturado) || (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false);
-      const costoUnitRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+      const isSobranteNoFact = Boolean(it.es_sobrante_no_facturado) || 
+        (it.depto_codigo ? parseInt(it.depto_codigo, 10) === 999 : false) ||
+        (uEsp === 0 && uFisicas > 0);
 
-      // En cierre parcial, ignorar ítems sin conteo ni rotura
+      let costoUnitRef = Number(it.costo_unitario_aplicado || it.costo_unitario_ap || it.costo_unitario || 0);
+      if (costoUnitRef === 0) {
+        costoUnitRef = getItemCostoReferencial(it, maestroCostMap, currentCamion?.tiene_reporte_ap);
+      }
+      if (costoUnitRef === 0 && it.precio_retail && Number(it.precio_retail) > 0) {
+        costoUnitRef = Number(it.precio_retail);
+      }
+
+      // CIERRE PARCIAL: ignorar ítems sin conteo ni rotura (no auditados)
       if (esParcial && uFisicas === 0 && cantDan === 0 && !isSobranteNoFact) {
         return;
       }
 
+      // 1. Mercadería no facturada
       if (isSobranteNoFact && uFisicas > 0) {
         const tot = Number((uFisicas * costoUnitRef).toFixed(2));
         totalMontoReclamado += tot;
         skuSet.add(it.sku);
         cantUnidadesAfectadas += uFisicas;
       } else if (!isSobranteNoFact) {
+        // 2. Faltantes (parciales O totales en Cierre Completo)
         if (uFisicas < uEsp) {
           const cantFalt = Number((uEsp - uFisicas).toFixed(3));
           if (cantFalt > 0) {
@@ -675,6 +744,7 @@ export const cerrarCamionNae = async (
             cantUnidadesAfectadas += cantFalt;
           }
         } else if (uFisicas > uEsp && uEsp > 0) {
+          // 3. Sobrantes facturados
           const cantSobr = Number((uFisicas - uEsp).toFixed(3));
           if (cantSobr > 0) {
             totalMontoReclamado += Number((cantSobr * costoUnitRef).toFixed(2));
@@ -683,6 +753,8 @@ export const cerrarCamionNae = async (
           }
         }
       }
+
+      // 4. Dañados
       if (cantDan > 0) {
         totalMontoReclamado += Number((cantDan * costoUnitRef).toFixed(2));
         skuSet.add(it.sku);
@@ -770,7 +842,7 @@ export const cerrarCamionNae = async (
     reclamoGenerado = true;
     mensajeFeedback = esParcial
       ? `Camión finalizado de forma PARCIAL por ${activeUser}. Se generó el reclamo Magma únicamente por las diferencias de los ítems auditados ($${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}).`
-      : `Camión finalizado con discrepancias. Se generó automáticamente el reclamo Magma por $${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`;
+      : `Camión finalizado con discrepancias. Se generó automáticamente el reclamo Magma por $${Number(totalMontoReclamado.toFixed(2)).toLocaleString('es-AR', { minimumFractionDigits: 2 })} (incluye faltantes totales de ítems sin contar).`;
   }
 
   return {
@@ -778,10 +850,18 @@ export const cerrarCamionNae = async (
     es100Conforme: discEval.es100Conforme,
     cantFaltantes: discEval.cantFaltantes,
     cantSobrantes: discEval.cantSobrantes,
+    cantNoFacturados: discEval.cantNoFacturados,
+    cantDanados: discEval.cantDanados,
     cantDaniados: discEval.cantDaniados,
     cantSinContar: discEval.cantSinContar,
+    skusFaltantes: discEval.skusFaltantes,
+    skusSobrantes: discEval.skusSobrantes,
+    skusNoFacturados: discEval.skusNoFacturados,
+    skusDanados: discEval.skusDanados,
+    skusSinContar: discEval.skusSinContar,
     mensaje: mensajeFeedback,
-    reclamoGenerado
+    reclamoGenerado,
+    montoReclamado: Number(totalMontoReclamado.toFixed(2))
   };
 };
 

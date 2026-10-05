@@ -114,8 +114,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
     const isParcialDetected = isCamionCierreParcial(base) ||
       Boolean(base.es_parcial) ||
       base.tipo_cierre === 'PARCIAL' ||
-      base.has_log_parcial === true ||
-      (Boolean(reclamo.cant_skus_afectados) && reclamo.cant_skus_afectados! < 100 && items.length > 50);
+      base.has_log_parcial === true;
 
     if (isParcialDetected) {
       return {
@@ -126,25 +125,14 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
       };
     }
     return base;
-  }, [camionObj, camionInput, reclamo, items.length]);
+  }, [camionObj, camionInput, reclamo]);
 
   const esParcialEfectivo = isCamionCierreParcial(activeCamion);
 
-  // Filtrado obligatorio de ítems auditados si es cierre parcial (omite uEsc === 0 && bEsc === 0 && cantDan === 0)
-  const scopedItemsModal = useMemo(() => {
-    if (!esParcialEfectivo) return items;
-    return items.filter(it => {
-      const uEsc = Number(it.unidades_escaneadas || 0);
-      const bEsc = Number(it.bultos_escaneados || 0);
-      const cantDan = Number(it.cantidad_danada || 0);
-      const isSobrante = Boolean(it.es_sobrante_no_facturado) || (it.depto_codigo && parseInt(it.depto_codigo, 10) === 999);
-      return uEsc > 0 || bEsc > 0 || cantDan > 0 || isSobrante;
-    });
-  }, [items, esParcialEfectivo]);
-
+  // Lista directa sin descartes locales para evaluar todos los ítems afectados
   const disc = useMemo(() => {
-    return calcularDiscrepanciasReclamo(scopedItemsModal, activeCamion, esParcialEfectivo);
-  }, [scopedItemsModal, activeCamion, esParcialEfectivo]);
+    return calcularDiscrepanciasReclamo(items, activeCamion, esParcialEfectivo);
+  }, [items, activeCamion, esParcialEfectivo]);
 
   const filteredDiscrepancias = disc.itemsDiscrepantes.filter(d => {
     if (!searchQuery.trim()) return true;
@@ -230,7 +218,7 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
 
   const handleExport = async () => {
     const keysArray = Array.from(selectedKeys);
-    await exportarPlanillaReclamoMagmaExcel(reclamo, scopedItemsModal, keysArray, activeCamion);
+    await exportarPlanillaReclamoMagmaExcel(reclamo, items, keysArray, activeCamion);
     onExportExcel();
   };
 
@@ -460,14 +448,20 @@ export const ModalDetalleReclamoMagma: React.FC<Props> = ({
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
                             d.motivo === 'FALTANTE'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              ? ((d as any).tipoFaltante === 'TOTAL' || (Number(it.unidades_escaneadas || 0) === 0 && Number(it.bultos_escaneados || 0) === 0))
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300 font-extrabold'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
                               : d.motivo === 'SOBRANTE'
                               ? 'bg-blue-100 text-blue-800 border border-blue-200'
                               : d.motivo === 'NO FACTURADO'
                               ? 'bg-purple-100 text-purple-800 border border-purple-200'
                               : 'bg-red-100 text-red-800 border border-red-200'
                           }`}>
-                            {d.motivo}
+                            {d.motivo === 'FALTANTE' && ((d as any).tipoFaltante === 'TOTAL' || (Number(it.unidades_escaneadas || 0) === 0 && Number(it.bultos_escaneados || 0) === 0))
+                              ? 'FALTANTE TOTAL'
+                              : d.motivo === 'FALTANTE'
+                              ? 'FALTANTE PARCIAL'
+                              : d.motivo}
                           </span>
                         </td>
 

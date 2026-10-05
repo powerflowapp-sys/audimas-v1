@@ -15,7 +15,6 @@ import {
   Layers, 
   Sparkles,
   RefreshCw,
-  ExternalLink,
   ShieldCheck,
   ShieldAlert
 } from 'lucide-react';
@@ -192,27 +191,27 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#001738] via-[#000d21] to-[#000611] text-white flex flex-col font-sans pb-32 select-none">
       
-      {/* 1. Header Superior Fijo */}
-      <header className="sticky top-0 z-40 bg-[#040e21]/95 backdrop-blur-md border-b border-sky-500/20 shadow-xl px-4 py-3.5">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+      {/* 1. Header Superior Móvil Fijo */}
+      <header className="sticky top-0 z-40 bg-[#040e21]/95 backdrop-blur-md border-b border-sky-500/20 shadow-md px-3.5 py-2.5">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2.5 min-w-0">
             <button
               onClick={onBack}
-              className="p-2 text-sky-400 hover:text-white hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer"
+              className="p-1.5 text-sky-400 hover:text-white hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer shrink-0"
               title="Volver"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex items-center space-x-2.5">
-              <div className="p-2 rounded-xl bg-sky-500/10 border border-sky-400/30 text-sky-400">
-                <Database className="w-5 h-5" />
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-400/30 text-sky-400 shrink-0">
+                <Database className="w-4 h-4" />
               </div>
-              <div>
-                <h1 className="font-['Chakra_Petch'] font-black text-base uppercase tracking-wider text-white">
-                  Consultor de Catálogo Maestro
+              <div className="min-w-0">
+                <h1 className="font-['Chakra_Petch'] font-black text-xs sm:text-sm uppercase tracking-wider text-white truncate">
+                  Consultar Catálogo
                 </h1>
-                <p className="text-[11px] text-sky-300/80 font-medium">
-                  Búsqueda elástica en tiempo real de UPC, EAN y SKU
+                <p className="text-[10px] text-sky-300/80 font-medium truncate">
+                  Búsqueda elástica UPC y SKU en SIM
                 </p>
               </div>
             </div>
@@ -220,7 +219,7 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
 
           <button
             onClick={onHome}
-            className="p-2 text-slate-400 hover:text-white hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer shrink-0 ml-2"
             title="Ir al Inicio"
           >
             <Home className="w-5 h-5" />
@@ -228,13 +227,13 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
         </div>
       </header>
 
-      {/* 2. Cuerpo Central */}
-      <main className="max-w-3xl w-full mx-auto px-4 pt-6 space-y-6 flex-1">
+      {/* 2. Cuerpo Central Mobile-First (max-w-md) */}
+      <main className="max-w-md w-full mx-auto px-3.5 py-3 space-y-3.5 flex-1">
         
-        {/* Formulario de Entrada */}
-        <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Formulario de Entrada Ergonómico (h-12) */}
+        <form onSubmit={handleSubmit} className="space-y-2">
           <div className="relative flex items-center">
-            <div className="absolute left-4 text-sky-400 pointer-events-none">
+            <div className="absolute left-3.5 text-sky-400 pointer-events-none">
               <Barcode className="w-5 h-5" />
             </div>
 
@@ -243,8 +242,8 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Escaneá o ingresá UPC, EAN o SKU (ej. 0040003601026)..."
-              className="w-full pl-12 pr-28 py-3.5 bg-[#061833]/90 border-2 border-sky-500/30 focus:border-sky-400 focus:ring-4 focus:ring-sky-500/20 rounded-2xl text-white placeholder-slate-400 font-mono text-sm tracking-wide transition-all shadow-inner outline-none"
+              placeholder="Escaneá o ingresá UPC o SKU..."
+              className="w-full h-12 pl-11 pr-24 bg-[#061833]/90 border border-sky-500/30 focus:border-sky-400 focus:ring-2 focus:ring-sky-500/20 rounded-2xl text-white placeholder-slate-400 font-mono text-xs tracking-wide transition-all shadow-inner outline-none"
             />
 
             {searchInput && (
@@ -257,7 +256,7 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
                   setMultipleResults([]);
                   inputRef.current?.focus();
                 }}
-                className="absolute right-24 p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                className="absolute right-20 p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
                 title="Limpiar"
               >
                 <X className="w-4 h-4" />
@@ -267,13 +266,10 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
             <button
               type="submit"
               disabled={isSearching || !searchInput.trim()}
-              className="absolute right-2 px-4 py-2 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-40 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed"
+              className="absolute right-1.5 h-9 px-3.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 disabled:opacity-40 text-white font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center space-x-1 cursor-pointer disabled:cursor-not-allowed"
             >
               {isSearching ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Buscando</span>
-                </>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <>
                   <Search className="w-3.5 h-3.5" />
@@ -283,10 +279,10 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
             </button>
           </div>
 
-          {/* Búsquedas recientes rápidas */}
+          {/* Búsquedas recientes rápidas (Chips compactos) */}
           {recentSearches.length > 0 && !hasSearched && (
-            <div className="flex items-center gap-2 pt-1 flex-wrap">
-              <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Recientes:</span>
+            <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Recientes:</span>
               {recentSearches.map((rec, i) => (
                 <button
                   key={i}
@@ -295,7 +291,7 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
                     setSearchInput(rec);
                     executeSearch(rec);
                   }}
-                  className="px-2.5 py-1 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-500/20 rounded-lg text-xs font-mono text-sky-200 transition-colors"
+                  className="px-2 py-0.5 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-500/20 rounded-lg text-[11px] font-mono text-sky-200 transition-colors"
                 >
                   {rec}
                 </button>
@@ -306,193 +302,175 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
 
         {/* 3. Panel de Resultados */}
         {isSearching && (
-          <div className="p-12 text-center space-y-3 bg-[#051329]/60 rounded-3xl border border-sky-500/20 backdrop-blur-md animate-pulse">
-            <RefreshCw className="w-8 h-8 text-sky-400 animate-spin mx-auto" />
-            <p className="text-sm text-sky-200 font-medium">
-              Consultando variantes numéricas en <strong className="text-white">maestro_productos</strong>...
+          <div className="p-8 text-center space-y-2 bg-[#051329]/60 rounded-2xl border border-sky-500/20 backdrop-blur-md animate-pulse">
+            <RefreshCw className="w-6 h-6 text-sky-400 animate-spin mx-auto" />
+            <p className="text-xs text-sky-200 font-medium">
+              Consultando variantes en <strong className="text-white">maestro_productos</strong>...
             </p>
           </div>
         )}
 
-        {/* CASO A: PRODUCTO ENCONTRADO */}
+        {/* CASO A: PRODUCTO ENCONTRADO (ESTILO TARJETA DE CAMIÓN AUDIMÁS) */}
         {!isSearching && foundProduct && (
-          <div className="space-y-4 animate-fadeIn">
-            {/* Header de Éxito */}
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between text-emerald-300">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-1.5 bg-emerald-500/20 rounded-xl border border-emerald-500/40 text-emerald-400">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-['Chakra_Petch'] font-black text-sm uppercase tracking-wider text-emerald-200">
-                    Artículo Encontrado en Catálogo Maestro
-                  </h3>
-                  <p className="text-xs text-emerald-300/80">
-                    Coincidencia exitosa por <strong className="font-bold text-white">{matchedBy}</strong> ({matchedVariant})
-                  </p>
-                </div>
+          <div className="bg-[#061833]/95 border border-sky-500/30 rounded-2xl p-4 shadow-xl backdrop-blur-md space-y-3.5 animate-fadeIn">
+            
+            {/* Header de Éxito Compacto */}
+            <div className="flex items-center justify-between pb-2 border-b border-sky-500/20">
+              <div className="flex items-center space-x-1.5 text-emerald-400">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wider text-emerald-300">
+                  Encontrado en Catálogo
+                </span>
               </div>
-
-              <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
-                ACTIVO EN SIM / V8
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 border border-emerald-500/30 text-emerald-300">
+                SIM / V8
               </span>
             </div>
 
-            {/* Tarjeta Principal de Información */}
-            <div className="bg-[#061833]/90 border border-sky-500/30 rounded-3xl p-6 shadow-2xl backdrop-blur-md space-y-6">
-              
-              {/* Descripción Grande y Departamento */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase bg-sky-500/20 border border-sky-400/30 text-sky-300">
-                    Depto {foundProduct.depto_codigo || '00'} • {foundProduct.depto_nombre || 'GENERAL'}
+            {/* Badges de Depto y UOM */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-sky-500/20 border border-sky-400/30 text-sky-300">
+                  Depto {foundProduct.depto_codigo || '00'} • {foundProduct.depto_nombre || 'GENERAL'}
+                </span>
+                {foundProduct.unidad_medida && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-purple-500/20 border border-purple-400/30 text-purple-300">
+                    UOM: {foundProduct.unidad_medida}
                   </span>
-                  {foundProduct.unidad_medida && (
-                    <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase bg-purple-500/20 border border-purple-400/30 text-purple-300">
-                      UOM: {foundProduct.unidad_medida}
-                    </span>
-                  )}
-                </div>
-
-                <h2 className="text-xl sm:text-2xl font-['Chakra_Petch'] font-bold text-white tracking-wide leading-tight">
-                  {foundProduct.descripcion || 'SIN DESCRIPCIÓN'}
-                </h2>
+                )}
               </div>
 
-              {/* Grilla de Códigos (Para verificar ceros y padding) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
-                {/* SKU */}
-                <div className="bg-[#020b17] border border-sky-500/20 rounded-2xl p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
-                      SKU Oficial en Maestro
-                    </span>
-                    <span className="text-lg font-mono font-bold text-white tracking-wider">
-                      {foundProduct.sku || 'SIN SKU'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(foundProduct.sku, 'sku')}
-                    className="p-2 text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer"
-                    title="Copiar SKU"
-                  >
-                    {copiedField === 'sku' ? (
-                      <Check className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-
-                {/* UPC / Código de Barras */}
-                <div className="bg-[#020b17] border border-sky-500/20 rounded-2xl p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
-                      UPC / EAN en Maestro (Formato DB)
-                    </span>
-                    <span className="text-lg font-mono font-bold text-sky-300 tracking-wider">
-                      {foundProduct.upc || 'SIN UPC'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(foundProduct.upc, 'upc')}
-                    className="p-2 text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-xl transition-all cursor-pointer"
-                    title="Copiar UPC"
-                  >
-                    {copiedField === 'upc' ? (
-                      <Check className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Grilla Económica: Costo y Retail */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-sky-500/20">
-                
-                {/* Costo Unitario */}
-                <div className="bg-[#041a38]/80 border border-emerald-500/30 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] text-emerald-300 font-bold uppercase tracking-wider">
-                      Costo Unitario Referencial
-                    </span>
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <p className="text-2xl font-mono font-black text-emerald-300">
-                    {formatMoney(foundProduct.costo_unitario)}
-                  </p>
-                  <span className="text-[10px] text-emerald-400/70 mt-1 block">
-                    {foundProduct.costo_unitario && foundProduct.costo_unitario > 0
-                      ? '✓ Costo disponible para reclamos Magma'
-                      : '⚠️ Sin costo en Maestro ($0,00)'}
-                  </span>
-                </div>
-
-                {/* Precio Retail / Venta */}
-                <div className="bg-[#041a38]/80 border border-sky-500/30 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] text-sky-300 font-bold uppercase tracking-wider">
-                      Precio Retail / Venta
-                    </span>
-                    <Tag className="w-4 h-4 text-sky-400" />
-                  </div>
-                  <p className="text-2xl font-mono font-black text-sky-300">
-                    {formatMoney(foundProduct.precio_retail)}
-                  </p>
-                  <span className="text-[10px] text-sky-400/70 mt-1 block">
-                    Precio góndola / venta al público
-                  </span>
-                </div>
-              </div>
-
-              {/* Bloque Pedagógico: Comparación de Búsqueda Elástica */}
-              {lastSearchedCode !== foundProduct.upc && lastSearchedCode !== foundProduct.sku && (
-                <div className="bg-sky-950/40 border border-sky-500/20 rounded-2xl p-3.5 text-xs text-sky-300 space-y-1">
-                  <div className="flex items-center space-x-1.5 font-bold">
-                    <Sparkles className="w-4 h-4 text-sky-400" />
-                    <span>Resolución Elástica Confirmada:</span>
-                  </div>
-                  <p className="text-slate-300 font-mono text-[11px] leading-relaxed">
-                    Buscaste: <strong className="text-white">{lastSearchedCode}</strong> → Encontrado en base como: <strong className="text-emerald-400">{matchedVariant}</strong>
-                  </p>
-                </div>
-              )}
+              {/* Título del Producto Adaptable */}
+              <h2 className="text-base sm:text-lg font-['Chakra_Petch'] font-bold text-white tracking-wide leading-snug line-clamp-2">
+                {foundProduct.descripcion || 'SIN DESCRIPCIÓN'}
+              </h2>
             </div>
+
+            {/* Grilla de Códigos (SKU y UPC Proporcionales) */}
+            <div className="grid grid-cols-2 gap-2">
+              
+              {/* SKU */}
+              <div className="bg-[#020b17] border border-sky-500/20 rounded-xl p-2.5 flex items-center justify-between">
+                <div className="min-w-0 pr-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                    SKU Maestro
+                  </span>
+                  <span className="text-xs font-mono font-bold text-white tracking-wider truncate block">
+                    {foundProduct.sku || 'SIN SKU'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(foundProduct.sku, 'sku')}
+                  className="p-1.5 text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg transition-all shrink-0 cursor-pointer"
+                  title="Copiar SKU"
+                >
+                  {copiedField === 'sku' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              {/* UPC */}
+              <div className="bg-[#020b17] border border-sky-500/20 rounded-xl p-2.5 flex items-center justify-between">
+                <div className="min-w-0 pr-1">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                    UPC en DB
+                  </span>
+                  <span className="text-xs font-mono font-bold text-sky-300 tracking-wider truncate block">
+                    {foundProduct.upc || 'SIN UPC'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(foundProduct.upc, 'upc')}
+                  className="p-1.5 text-slate-400 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg transition-all shrink-0 cursor-pointer"
+                  title="Copiar UPC"
+                >
+                  {copiedField === 'upc' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Grilla Económica Compacta (Costo y Retail) */}
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-sky-500/20">
+              
+              {/* Costo Unitario */}
+              <div className="bg-[#041a38]/80 border border-emerald-500/30 rounded-xl p-2.5">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[9px] text-emerald-300 font-bold uppercase tracking-wider">
+                    Costo Unit. Ref.
+                  </span>
+                  <DollarSign className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                </div>
+                <p className="text-base sm:text-lg font-mono font-black text-emerald-300">
+                  {formatMoney(foundProduct.costo_unitario)}
+                </p>
+                <span className="text-[8px] text-emerald-400/80 block truncate">
+                  {foundProduct.costo_unitario && foundProduct.costo_unitario > 0
+                    ? '✓ Disponible para Magma'
+                    : '⚠️ Sin costo ($0,00)'}
+                </span>
+              </div>
+
+              {/* Precio Retail */}
+              <div className="bg-[#041a38]/80 border border-sky-500/30 rounded-xl p-2.5">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[9px] text-sky-300 font-bold uppercase tracking-wider">
+                    Precio Retail
+                  </span>
+                  <Tag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                </div>
+                <p className="text-base sm:text-lg font-mono font-black text-sky-300">
+                  {formatMoney(foundProduct.precio_retail)}
+                </p>
+                <span className="text-[8px] text-sky-400/80 block truncate">
+                  Venta góndola
+                </span>
+              </div>
+            </div>
+
+            {/* Detalle de Resolución Elástica Sutil */}
+            {lastSearchedCode !== foundProduct.upc && lastSearchedCode !== foundProduct.sku && (
+              <div className="bg-sky-950/40 border border-sky-500/20 rounded-xl p-2.5 text-xs text-sky-300 space-y-0.5">
+                <div className="flex items-center space-x-1 font-bold text-[10px] text-sky-300">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Coincidencia Elástica:</span>
+                </div>
+                <p className="text-slate-300 font-mono text-[10px] leading-snug">
+                  Buscaste: <strong className="text-white">{lastSearchedCode}</strong> → En base como: <strong className="text-emerald-400">{matchedVariant}</strong>
+                </p>
+              </div>
+            )}
           </div>
         )}
 
         {/* CASO B: MÚLTIPLES RESULTADOS (Búsqueda por texto) */}
         {!isSearching && multipleResults.length > 0 && (
-          <div className="space-y-3 animate-fadeIn">
-            <div className="flex items-center justify-between text-xs text-sky-300 font-medium">
-              <span>Se encontraron {multipleResults.length} artículos por descripción:</span>
-              <span className="text-slate-400">Seleccioná uno para ver el detalle</span>
+          <div className="space-y-2 animate-fadeIn">
+            <div className="flex items-center justify-between text-[11px] text-sky-300 font-medium px-1">
+              <span>{multipleResults.length} artículos encontrados:</span>
+              <span className="text-slate-400">Toca uno para ver</span>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {multipleResults.map((p, idx) => (
                 <div
                   key={idx}
                   onClick={() => handleSelectMultipleItem(p)}
-                  className="bg-[#061833]/90 hover:bg-[#0c2e59] border border-sky-500/30 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
+                  className="bg-[#061833]/90 hover:bg-[#0c2e59] border border-sky-500/30 rounded-xl p-3 flex items-center justify-between cursor-pointer transition-all active:scale-[0.99]"
                 >
-                  <div className="min-w-0 pr-4">
-                    <p className="font-['Chakra_Petch'] font-bold text-white text-sm truncate">
+                  <div className="min-w-0 pr-3">
+                    <p className="font-['Chakra_Petch'] font-bold text-white text-xs truncate">
                       {p.descripcion}
                     </p>
-                    <p className="text-xs text-sky-300 font-mono mt-0.5">
-                      SKU: {p.sku} • UPC: {p.upc} • Depto: {p.depto_codigo} ({p.depto_nombre})
+                    <p className="text-[10px] text-sky-300 font-mono mt-0.5 truncate">
+                      SKU: {p.sku} • UPC: {p.upc}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="font-mono font-bold text-emerald-400 text-sm block">
+                    <span className="font-mono font-bold text-emerald-400 text-xs block">
                       {formatMoney(p.costo_unitario)}
                     </span>
-                    <span className="text-[10px] text-slate-400 block">Costo Ref.</span>
+                    <span className="text-[9px] text-slate-400 block">Costo Ref.</span>
                   </div>
                 </div>
               ))}
@@ -500,32 +478,32 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
           </div>
         )}
 
-        {/* CASO C: NO ENCONTRADO */}
+        {/* CASO C: NO ENCONTRADO (ALERTA COMPACTA) */}
         {!isSearching && hasSearched && !foundProduct && multipleResults.length === 0 && (
-          <div className="bg-[#1a0808]/90 border border-rose-500/40 rounded-3xl p-6 shadow-2xl backdrop-blur-md space-y-4 animate-fadeIn">
-            <div className="flex items-center space-x-3 text-rose-400">
-              <div className="p-2 bg-rose-500/20 border border-rose-500/40 rounded-xl shrink-0">
-                <ShieldAlert className="w-6 h-6" />
+          <div className="bg-[#1a0808]/90 border border-rose-500/40 rounded-2xl p-4 shadow-xl backdrop-blur-md space-y-3 animate-fadeIn">
+            <div className="flex items-center space-x-2.5 text-rose-400">
+              <div className="p-1.5 bg-rose-500/20 border border-rose-500/40 rounded-lg shrink-0">
+                <ShieldAlert className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="font-['Chakra_Petch'] font-black text-base text-rose-300 uppercase tracking-wide">
-                  Código no encontrado en el Maestro de Productos
+              <div className="min-w-0">
+                <h3 className="font-['Chakra_Petch'] font-bold text-xs uppercase tracking-wide text-rose-300">
+                  Código no encontrado
                 </h3>
-                <p className="text-xs text-rose-300/80">
-                  No existe registro en la tabla <strong className="text-white">maestro_productos</strong> con este código.
+                <p className="text-[10px] text-rose-300/80">
+                  Sin registro en <strong className="text-white">maestro_productos</strong>.
                 </p>
               </div>
             </div>
 
-            <div className="bg-[#0c0303] border border-rose-500/20 rounded-2xl p-4 space-y-2">
-              <span className="text-[11px] text-slate-400 uppercase font-bold tracking-wider block">
-                Variantes numéricas evaluadas sin coincidencia:
+            <div className="bg-[#0c0303] border border-rose-500/20 rounded-xl p-2.5 space-y-1.5">
+              <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">
+                Variantes evaluadas sin coincidencia:
               </span>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1">
                 {testedVariants.map((v, idx) => (
                   <span
                     key={idx}
-                    className="px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-200 font-mono text-xs"
+                    className="px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-200 font-mono text-[10px]"
                   >
                     {v}
                   </span>
@@ -533,10 +511,8 @@ export const ConsultaMaestroView: React.FC<Props> = ({ onBack, onHome, initialCo
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              💡 <strong>Sugerencias:</strong>
-              <br />• Verificá que el archivo de <em>Maestro de Productos (V8 o Stock 24)</em> haya sido cargado desde el menú <em>Catálogo Maestro (SIM)</em>.
-              <br />• Si es un artículo nuevo ingresado en tienda, podés auditarlo con doble validación de 2 fotos para catalogarlo como Sobrante No Facturado.
+            <p className="text-[10px] text-slate-300 leading-snug">
+              💡 <strong>Tip:</strong> Si es un ítem nuevo en tienda, podés auditarlo con doble validación de 2 fotos para ingresarlo como Sobrante No Facturado.
             </p>
           </div>
         )}
